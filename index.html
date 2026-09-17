@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>EIRC 51st Regional Conference</title>
+<style>
+  :root{
+    --navy:#0B3D66; --navy-dark:#062A47; --gold:#D4A017; --gold-light:#FCEFC7;
+    --bg:#F2F5F8; --card:#FFFFFF; --border:#DCE3EA;
+    --text:#182430; --text-secondary:#4C5C6B; --text-muted:#7C8A98;
+    --radius:12px; --green:#1E7A44; --green-light:#E3F5EA;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  body{margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif; background:var(--bg); color:var(--text); font-size:16px; padding-bottom:78px;}
+  .topbar{background:var(--navy); color:#fff; padding:16px; display:flex; align-items:center; gap:12px; position:sticky; top:0; z-index:20;}
+  .badge{width:44px; height:44px; border-radius:50%; background:var(--gold); color:var(--navy-dark); display:flex; align-items:center; justify-content:center; font-weight:800; font-size:15px; flex-shrink:0;}
+  .topbar-title{font-size:18px; font-weight:700; margin:0; line-height:1.25;}
+  .topbar-sub{font-size:13px; color:#CBD8E4; margin:2px 0 0;}
+  .logout{margin-left:auto; background:none; border:1px solid rgba(255,255,255,0.4); color:#fff; font-size:12px; padding:6px 12px; border-radius:8px;}
+  .container{max-width:640px; margin:0 auto; padding:16px;}
+  h2.page-title{font-size:20px; margin:0 0 4px; font-weight:800;}
+  p.page-sub{font-size:14px; color:var(--text-secondary); margin:0 0 16px;}
+  .card{border:1px solid var(--border); border-radius:var(--radius); padding:16px; margin-bottom:12px; background:var(--card); box-shadow:0 1px 2px rgba(20,40,60,0.04);}
+  .card p{margin:3px 0; font-size:15px;}
+  .avatar{width:48px; height:48px; border-radius:50%; background:var(--gold-light); color:var(--navy); display:flex; align-items:center; justify-content:center; font-size:17px; font-weight:800; flex-shrink:0;}
+  .row{display:flex; align-items:center; gap:12px;}
+  .muted{color:var(--text-secondary); font-size:14px;}
+  .tiny-muted{color:var(--text-muted); font-size:13px;}
+  .accent{color:var(--navy); font-weight:700;}
+  .name-lg{font-size:17px; font-weight:800; margin:0;}
+  .section-label{font-size:13px; font-weight:800; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.04em; margin:20px 0 8px;}
+  .section-label:first-child{margin-top:0;}
+  input[type=text], input[type=tel], input[type=time], select{width:100%; height:48px; border:1.5px solid var(--border); border-radius:10px; padding:0 14px; font-size:16px; background:#fff; color:var(--text); margin-bottom:10px;}
+  label.field-label{font-size:13px; font-weight:700; color:var(--text-secondary); display:block; margin-bottom:4px;}
+  button.big{background:var(--navy); color:#fff; border:none; border-radius:10px; padding:0 18px; height:48px; font-size:16px; font-weight:700; cursor:pointer; width:100%;}
+  button.secondary{background:#fff; color:var(--navy); border:1.5px solid var(--navy); border-radius:10px; padding:0 14px; height:44px; font-size:14px; font-weight:700; cursor:pointer;}
+  button.danger-outline{background:#fff; color:#B3261E; border:1.5px solid #B3261E; border-radius:10px; padding:0 14px; height:40px; font-size:13px; font-weight:700; cursor:pointer;}
+  .segmented{display:flex; background:var(--bg); border-radius:8px; padding:2px; gap:2px;}
+  .segbtn{font-size:12px; padding:6px 10px; border:none; background:none; border-radius:6px; cursor:pointer; color:var(--text-muted); font-weight:700;}
+  .segbtn.active-none{background:#fff; color:var(--text-muted);}
+  .segbtn.active-view{background:#DCEBFB; color:#0B5FA6;}
+  .segbtn.active-edit{background:var(--green-light); color:var(--green);}
+  .status-tag{font-size:12px; padding:4px 10px; border-radius:20px; background:var(--gold-light); color:var(--navy); font-weight:800;}
+  .pending-tag{font-size:12px; padding:4px 10px; border-radius:20px; background:#FFE9CC; color:#8A5A00; font-weight:800;}
+  .empty{font-size:15px; color:var(--text-muted); text-align:center; padding:24px 0;}
+  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+  .bottomnav{position:fixed; bottom:0; left:0; right:0; background:#fff; border-top:1px solid var(--border); display:flex; z-index:30; padding-bottom:env(safe-area-inset-bottom);}
+  .bottomnav button{flex:1; border:none; background:none; padding:10px 4px 8px; cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:3px; color:var(--text-muted); font-size:11.5px; font-weight:700;}
+  .bottomnav button.active{color:var(--navy);}
+  .add-inline{background:var(--gold-light); border-radius:var(--radius); padding:14px; margin-bottom:14px;}
+  .divider{border:none; border-top:1px solid var(--border); margin:14px 0;}
+  .errbox{background:#FDEDEC; border:1px solid #F1AAA4; color:#B3261E; border-radius:10px; padding:10px 14px; font-size:13px; margin-bottom:12px;}
+  .live-dot{display:inline-block; width:8px; height:8px; border-radius:50%; background:#3BC46A; margin-right:6px;}
+  .role-tag{font-size:11px; padding:3px 9px; border-radius:20px; font-weight:800; margin-left:6px;}
+  .role-tag.edit{background:var(--green-light); color:var(--green);}
+  .role-tag.view{background:#DCEBFB; color:#0B5FA6;}
+
+  #loginScreen{max-width:420px; margin:60px auto; padding:0 20px;}
+  #loginScreen .badge{width:60px; height:60px; font-size:20px; margin:0 auto 16px;}
+  #loginScreen h1{font-size:20px; text-align:center; margin:0 0 4px; font-weight:800; color:var(--navy);}
+  #loginScreen p.sub{text-align:center; color:var(--text-secondary); font-size:14px; margin:0 0 24px;}
+</style>
+</head>
+<body>
+
+<div id="loginScreen" style="display:none;">
+  <div class="badge">51</div>
+  <h1>EIRC 51st Regional Conference</h1>
+  <p class="sub">Sign in with your registered mobile number</p>
+  <div id="loginError"></div>
+  <div id="phoneStep">
+    <label class="field-label">Mobile number</label>
+    <input id="phoneInput" type="tel" placeholder="10-digit mobile number">
+    <button class="big" id="sendOtpBtn">Send OTP</button>
+  </div>
+  <div id="otpStep" style="display:none;">
+    <label class="field-label">Enter the OTP sent to your number</label>
+    <input id="otpInput" type="text" placeholder="4-digit code" maxlength="4">
+    <button class="big" id="verifyOtpBtn">Verify and continue</button>
+    <p class="tiny-muted" style="text-align:center; margin-top:10px;">Demo mode: the code is always 1234</p>
+  </div>
+</div>
+
+<div id="mainApp" style="display:none;">
+  <div class="topbar">
+    <div class="badge">51</div>
+    <div>
+      <p class="topbar-title">EIRC 51st Regional Conference</p>
+      <p class="topbar-sub" id="whoami"></p>
+    </div>
+    <button class="logout" id="logoutBtn">Log out</button>
+  </div>
+  <div class="container" id="app"></div>
+  <div class="bottomnav" id="bottomnav"></div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const API = '';
+let token = localStorage.getItem('eirc_token');
+let me = JSON.parse(localStorage.getItem('eirc_user') || 'null');
+let screen = 'home';
+let sessions = [], guests = [], statusLog = [], users = [], pendingLogistics = [];
+let editingSession = null, editingGuestName = null;
+let socket = null;
+
+async function api(path, opts){
+  opts = opts || {};
+  opts.headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {}, token ? { Authorization: 'Bearer ' + token } : {});
+  const res = await fetch(API + path, opts);
+  const data = await res.json().catch(()=>({}));
+  if(!res.ok) throw new Error(data.error || 'Something went wrong');
+  return data;
+}
+
+function showLogin(){
+  document.getElementById('loginScreen').style.display = 'block';
+  document.getElementById('mainApp').style.display = 'none';
+}
+function showApp(){
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('mainApp').style.display = 'block';
+  connectSocket();
+  loadEverything();
+}
+
+document.getElementById('sendOtpBtn').onclick = async () => {
+  const phone = document.getElementById('phoneInput').value.trim();
+  document.getElementById('loginError').innerHTML = '';
+  try {
+    await api('/api/auth/request-otp', { method:'POST', body: JSON.stringify({ phone }) });
+    window.__loginPhone = phone;
+    document.getElementById('phoneStep').style.display = 'none';
+    document.getElementById('otpStep').style.display = 'block';
+  } catch(e){
+    document.getElementById('loginError').innerHTML = '<div class="errbox">' + e.message + '</div>';
+  }
+};
+
+document.getElementById('verifyOtpBtn').onclick = async () => {
+  const code = document.getElementById('otpInput').value.trim();
+  document.getElementById('loginError').innerHTML = '';
+  try {
+    const data = await api('/api/auth/verify-otp', { method:'POST', body: JSON.stringify({ phone: window.__loginPhone, code }) });
+    token = data.token; me = data.user;
+    localStorage.setItem('eirc_token', token);
+    localStorage.setItem('eirc_user', JSON.stringify(me));
+    showApp();
+  } catch(e){
+    document.getElementById('loginError').innerHTML = '<div class="errbox">' + e.message + '</div>';
+  }
+};
+
+document.getElementById('logoutBtn').onclick = () => {
+  localStorage.removeItem('eirc_token'); localStorage.removeItem('eirc_user');
+  token = null; me = null;
+  if(socket) socket.disconnect();
+  showLogin();
+};
+
+function connectSocket(){
+  socket = io();
+  socket.on('sessions:updated', s => { sessions = s; renderApp(); });
+  socket.on('guests:updated', g => { guests = g; loadPending().then(renderApp); });
+  socket.on('status:updated', s => { statusLog = s; renderApp(); });
+  socket.on('users:updated', u => { users = u; renderApp(); });
+}
+
+async function loadEverything(){
+  sessions = await api('/api/sessions');
+  guests = await api('/api/guests');
+  statusLog = await api('/api/status');
+  if(me.role === 'admin') users = await api('/api/users');
+  if(me.role === 'admin' || (me.role === 'member' && me.logistics !== 'none')) await loadPending();
+  renderApp();
+}
+async function loadPending(){
+  try { const d = await api('/api/logistics/dashboard'); pendingLogistics = d.pending; guests = d.completed; } catch(e){}
+}
+
+function card(inner, extra){ return '<div class="card" style="' + (extra||'') + '">' + inner + '</div>'; }
+function initials(n){ return (n||'?').split(' ').filter(w=>w[0]===w[0].toUpperCase()).slice(0,2).map(w=>w[0]).join(''); }
+function sessionOf(g){ return sessions.find(s=>s.id===g.sessionId); }
+function myGuest(){ return guests.find(g => g.id === me.guestId); }
+function canEditM2M(){ return me.role==='admin' || (me.role==='member' && me.m2m==='edit'); }
+function canViewLogistics(){ return me.role==='admin' || (me.role==='member' && me.logistics!=='none'); }
+function canEditLogistics(){ return me.role==='admin' || (me.role==='member' && me.logistics==='edit'); }
+
+function screensFor(){
+  if(me.role==='admin') return [['home','Home'],['m2m','M2M'],['logistics','Logistics'],['status','Status'],['access','Access']];
+  if(me.role==='member'){
+    const items = [['home','Home']];
+    if(me.m2m!=='none') items.push(['m2m','M2M']);
+    if(me.logistics!=='none') items.push(['logistics','Logistics']);
+    items.push(['status','Status']);
+    return items;
+  }
+  return [['session','My guest'],['status','Status']];
+}
+
+function renderHome(){
+  let html = '<h2 class="page-title">' + (me.role==='admin' ? 'Admin dashboard' : me.role==='shadow' ? 'Your guest' : 'Dashboard') + '</h2>';
+  if(me.role !== 'shadow'){
+    html += '<p class="page-sub"><span class="live-dot"></span>Live — updates instantly across every device</p>';
+    html += '<p class="section-label">All guests, live status</p>';
+    if(!guests.length) html += '<p class="empty">No guest logistics finalized yet.</p>';
+    html += guests.map(g => card('<div class="row"><div class="avatar">' + initials(g.name) + '</div><div style="flex:1;"><p class="name-lg">' + g.name + '</p><p class="tiny-muted">' + (g.role||'') + '</p></div></div>')).join('');
+    if(canViewLogistics() && pendingLogistics.length){
+      html += '<p class="section-label">Pending logistics (from M2M)</p>';
+      html += pendingLogistics.map(p => card('<div class="row"><div class="avatar">' + initials(p.name) + '</div><div style="flex:1;"><p class="name-lg">' + p.name + '</p><p class="muted">' + p.session + '</p></div><span class="pending-tag">Pending</span></div>')).join('');
+    }
+    return html;
+  }
+  const g = myGuest();
+  if(!g){ return html + '<p class="empty">Your logistics have not been finalized yet by the logistics team.</p>'; }
+  const s = sessionOf(g);
+  html += '<p class="page-sub"><span class="live-dot"></span>Live for ' + g.name + '</p>';
+  html += card('<div class="row"><div class="avatar">' + initials(g.name) + '</div><div style="flex:1;"><p class="name-lg">' + g.name + '</p><p class="tiny-muted">' + g.role + '</p></div></div><hr class="divider"><p class="tiny-muted" style="font-weight:800;">SESSION</p><p style="font-weight:700;">' + (s?s.topic:'') + '</p><p class="muted">' + (s?(s.day+', '+s.time+' - '+s.end+' at '+s.hall):'') + '</p>');
+  return html;
+}
+
+function renderM2M(){
+  const editable = canEditM2M();
+  let html = '<h2 class="page-title">M2M schedule</h2><p class="page-sub">' + (editable ? 'You can edit this — changes go live for everyone instantly.' : 'View only.') + '</p>';
+  if(editable) html += '<button class="big" id="addSessionBtn" style="margin-bottom:16px;">+ Add a session</button>';
+  const days = [...new Set(sessions.map(s=>s.day))];
+  days.forEach(d => {
+    html += '<p class="section-label">' + d + '</p>';
+    sessions.filter(s=>s.day===d).forEach(s => {
+      if(editingSession===s.id){
+        html += card(
+          '<div class="grid2"><input id="edTime" type="time" value="' + s.time + '"><input id="edEnd" type="time" value="' + s.end + '"></div>' +
+          '<label class="field-label">Session topic</label><input id="edTopic" type="text" value="' + s.topic + '">' +
+          '<label class="field-label">Chairman</label><input id="edChairman" type="text" value="' + s.chairman + '">' +
+          '<label class="field-label">Speakers (comma separated)</label><input id="edSpeakers" type="text" value="' + s.speakers + '">' +
+          '<label class="field-label">Hall</label><input id="edHall" type="text" value="' + s.hall + '">' +
+          '<div class="grid2"><button class="big" id="saveSessionBtn" data-id="' + s.id + '">Save</button><button class="secondary" id="cancelSessionBtn">Cancel</button></div>'
+        );
+      } else {
+        html += card(
+          '<div class="row" style="align-items:flex-start;"><span class="accent" style="width:56px; flex-shrink:0; padding-top:2px;">' + s.time + '</span><div style="flex:1; min-width:0;"><p style="font-weight:800;">' + s.topic + '</p><p class="muted">Chairman: ' + s.chairman + '</p><p class="muted">Speakers: ' + s.speakers + '</p><p class="tiny-muted">' + s.hall + '</p></div></div>' +
+          (editable ? '<div style="display:flex; gap:8px; margin-top:10px;"><button class="secondary" data-edit="' + s.id + '">Edit</button><button class="danger-outline" data-del="' + s.id + '">Delete</button></div>' : '')
+        );
+      }
+    });
+  });
+  return html;
+}
+
+function guestCard(g){
+  const s = sessionOf(g);
+  return card(
+    '<div class="row" style="margin-bottom:10px;"><div class="avatar">' + initials(g.name) + '</div><div style="flex:1;"><p class="name-lg">' + g.name + '</p><p class="tiny-muted">' + g.role + '</p></div></div>' +
+    '<p class="tiny-muted" style="font-weight:800;">SESSION <span class="tiny-muted" style="font-weight:400;">(auto from M2M)</span></p>' +
+    '<p style="font-weight:700;">' + (s?s.topic:'') + '</p><p class="muted">' + (s?(s.day+', '+s.time+'-'+s.end+' - '+s.hall):'') + '</p>' +
+    '<p class="tiny-muted" style="font-weight:800; margin-top:12px;">TRAVEL</p>' +
+    '<p class="muted">Arrival: ' + (g.arrivalDay||'') + ' ' + (g.arrivalTime||'') + ' - ' + (g.arrivalDetail||'') + '</p>' +
+    '<p class="muted">Departure: ' + (g.departDay||'') + ' ' + (g.departTime||'') + ' - ' + (g.departDetail||'') + '</p>' +
+    '<p class="muted">Hotel: ' + (g.hotel||'') + '</p>' +
+    '<p class="tiny-muted" style="font-weight:800; margin-top:12px;">CAB AND DRIVER</p>' +
+    '<p class="muted">Driver: ' + (g.cabDriver||'') + ' - ' + (g.cabPhone||'') + '</p>' +
+    '<p class="tiny-muted" style="font-weight:800; margin-top:12px;">SHADOW</p>' +
+    '<p class="muted">' + (g.shadowName||'') + ' - ' + (g.shadowPhone||'') + '</p>'
+  );
+}
+
+function pendingForm(p){
+  return card(
+    '<p style="font-weight:800; margin-bottom:8px;">Finalize logistics for ' + p.name + '</p>' +
+    '<p class="tiny-muted" style="margin-bottom:10px;">' + p.session + '</p>' +
+    '<label class="field-label">Role</label><input id="pfRole" type="text" placeholder="e.g. Speaker" value="Speaker">' +
+    '<div class="grid2"><div><label class="field-label">Arrival day</label><input id="pfArrDay" type="text" placeholder="19 Dec"></div><div><label class="field-label">Arrival time</label><input id="pfArrTime" type="time"></div></div>' +
+    '<label class="field-label">Arrival detail</label><input id="pfArrDetail" type="text" placeholder="Flight AI 771, Kolkata airport">' +
+    '<div class="grid2"><div><label class="field-label">Departure day</label><input id="pfDepDay" type="text" placeholder="20 Dec"></div><div><label class="field-label">Departure time</label><input id="pfDepTime" type="time"></div></div>' +
+    '<label class="field-label">Departure detail</label><input id="pfDepDetail" type="text" placeholder="Flight AI 776, Kolkata airport">' +
+    '<label class="field-label">Hotel and room</label><input id="pfHotel" type="text">' +
+    '<label class="field-label">Driver name</label><input id="pfCabDriver" type="text">' +
+    '<label class="field-label">Driver phone</label><input id="pfCabPhone" type="tel">' +
+    '<label class="field-label">Shadow name</label><input id="pfShadowName" type="text">' +
+    '<label class="field-label">Shadow phone</label><input id="pfShadowPhone" type="tel">' +
+    '<div class="grid2"><button class="big" id="savePendingBtn" data-name="' + p.name + '">Save and finalize</button><button class="secondary" id="cancelPendingBtn">Cancel</button></div>'
+  );
+}
+
+function renderLogistics(){
+  const editable = canEditLogistics();
+  let html = '<h2 class="page-title">Logistics</h2><p class="page-sub">' + (editable ? 'You can edit this.' : 'View only.') + '</p>';
+  if(pendingLogistics.length){
+    html += '<p class="section-label">Pending — from M2M, not yet finalized</p>';
+    html += pendingLogistics.map(p => {
+      if(editable && editingGuestName===p.name) return pendingForm(p);
+      return card('<div class="row"><div class="avatar">' + initials(p.name) + '</div><div style="flex:1;"><p class="name-lg">' + p.name + '</p><p class="muted">' + p.session + '</p></div><span class="pending-tag">Pending</span></div>' + (editable ? '<button class="secondary" style="margin-top:10px;" data-startpending="' + p.name + '">Finalize logistics</button>' : ''));
+    }).join('');
+  }
+  html += '<p class="section-label">Finalized</p>';
+  if(!guests.length) html += '<p class="empty">Nobody finalized yet.</p>';
+  html += guests.map(guestCard).join('');
+  return html;
+}
+
+function renderMySession(){
+  const g = myGuest();
+  let html = '<h2 class="page-title">Your guest</h2>';
+  if(!g) return html + '<p class="empty">Your logistics have not been finalized yet. Check back soon.</p>';
+  html += '<p class="page-sub">Everything for ' + g.name + '. Nothing else is shown to you.</p>' + guestCard(g);
+  return html;
+}
+
+const statusOptions = ['Arrived airport','En route to hotel','Checked in hotel','Having lunch','At venue','Delayed','Departed for airport'];
+
+function renderStatus(){
+  let html = '<h2 class="page-title">Live status</h2>';
+  const isShadow = me.role === 'shadow';
+  const g = isShadow ? myGuest() : null;
+  if(isShadow && g){
+    html += '<div class="add-inline"><p style="font-weight:800; margin:0 0 10px;">Update status for ' + g.name + '</p><select id="statusSelect">' + statusOptions.map(o=>'<option value="'+o+'">'+o+'</option>').join('') + '</select><button class="big" id="postStatus">Post update</button></div>';
+  }
+  if(!statusLog.length) html += '<p class="empty">No updates yet.</p>';
+  html += statusLog.slice().reverse().map(s => card('<p style="font-weight:700;">' + s.guest + '</p><p class="muted">' + s.status + '</p><p class="tiny-muted">' + s.time + '</p>')).join('');
+  return html;
+}
+
+function segControl(personId, key, current){
+  const levels = [['none','None'],['view','View'],['edit','Edit']];
+  return '<div class="segmented">' + levels.map(([lv,label]) =>
+    '<button class="segbtn' + (current===lv ? ' active-'+lv : '') + '" data-person="' + personId + '" data-key="' + key + '" data-level="' + lv + '">' + label + '</button>'
+  ).join('') + '</div>';
+}
+
+function renderAccess(){
+  let html = '<h2 class="page-title">Manage access</h2><p class="page-sub">Add anyone by name and phone number, then set exactly what they can see and edit.</p>';
+  html += '<div class="add-inline">' +
+    '<label class="field-label">Full name</label><input id="newNameInput" type="text" placeholder="e.g. Riya Sen">' +
+    '<label class="field-label">Phone number</label><input id="newPhoneInput" type="tel" placeholder="10-digit mobile number">' +
+    '<label class="field-label">Type</label><select id="newRoleSelect"><option value="member">Office member</option><option value="admin">Admin</option><option value="shadow">Shadow</option></select>' +
+    '<div id="shadowGuestField" style="display:none;"><label class="field-label">Assigned guest name (must match M2M)</label><input id="newGuestName" type="text" placeholder="e.g. Tejas Goenka"></div>' +
+    '<button class="big" id="addMemberBtn">Add to team</button></div>';
+
+  html += '<p class="section-label">Team</p>';
+  html += users.filter(u=>u.role!=='admin').map(m => {
+    const badge = (lv,label) => lv==='edit' ? '<span class="role-tag edit">' + label + ': edit</span>' : lv==='view' ? '<span class="role-tag view">' + label + ': view</span>' : '';
+    if(m.role==='shadow') return card('<p style="font-weight:800;">' + m.name + ' <span class="role-tag view">Shadow</span></p><p class="tiny-muted">Guest id: ' + (m.guestId||'not linked') + '</p>');
+    return card(
+      '<p style="font-weight:800;">' + m.name + badge(m.m2m,'M2M') + badge(m.logistics,'Logistics') + '</p>' +
+      '<div style="margin-top:10px; display:flex; justify-content:space-between; align-items:center;"><span style="font-size:13px; font-weight:700;">M2M access</span>' + segControl(m.id,'m2m',m.m2m) + '</div>' +
+      '<div style="margin-top:8px; display:flex; justify-content:space-between; align-items:center;"><span style="font-size:13px; font-weight:700;">Logistics access</span>' + segControl(m.id,'logistics',m.logistics) + '</div>'
+    );
+  }).join('');
+  html += '<p class="section-label">Admins</p>';
+  html += users.filter(u=>u.role==='admin').map(a => card('<p style="font-weight:800;">' + a.name + '</p>')).join('');
+  return html;
+}
+
+function renderBottomNav(){
+  const items = screensFor();
+  if(!items.find(i=>i[0]===screen)) screen = items[0][0];
+  document.getElementById('bottomnav').innerHTML = items.map(([id,label]) =>
+    '<button data-screen="' + id + '" class="' + (screen===id?'active':'') + '">' + label + '</button>'
+  ).join('');
+  document.querySelectorAll('#bottomnav button').forEach(b => b.onclick = () => { screen = b.dataset.screen; renderApp(); });
+}
+
+function renderApp(){
+  document.getElementById('whoami').textContent = me.name + ' - ' + (me.role==='admin'?'Admin':me.role==='shadow'?'Shadow':'Office team');
+  renderBottomNav();
+  const app = document.getElementById('app');
+  if(screen==='home') app.innerHTML = renderHome();
+  else if(screen==='m2m') app.innerHTML = renderM2M();
+  else if(screen==='logistics') app.innerHTML = renderLogistics();
+  else if(screen==='session') app.innerHTML = renderMySession();
+  else if(screen==='status') app.innerHTML = renderStatus();
+  else if(screen==='access') app.innerHTML = renderAccess();
+  wireEvents();
+}
+
+function wireEvents(){
+  document.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => { editingSession = b.dataset.edit; renderApp(); });
+  const cancelBtn = document.getElementById('cancelSessionBtn');
+  if(cancelBtn) cancelBtn.onclick = () => { editingSession = null; renderApp(); };
+  const saveBtn = document.getElementById('saveSessionBtn');
+  if(saveBtn) saveBtn.onclick = async () => {
+    const id = saveBtn.dataset.id;
+    await api('/api/sessions/'+id, { method:'PUT', body: JSON.stringify({
+      time: document.getElementById('edTime').value, end: document.getElementById('edEnd').value,
+      topic: document.getElementById('edTopic').value, chairman: document.getElementById('edChairman').value,
+      speakers: document.getElementById('edSpeakers').value, hall: document.getElementById('edHall').value
+    })});
+    editingSession = null;
+  };
+  document.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => { await api('/api/sessions/'+b.dataset.del, { method:'DELETE' }); });
+  const addSessionBtn = document.getElementById('addSessionBtn');
+  if(addSessionBtn) addSessionBtn.onclick = async () => {
+    const s = await api('/api/sessions', { method:'POST', body: JSON.stringify({ day:'19 Dec', time:'12:00', end:'12:30', topic:'New session - tap edit to fill in', chairman:'', speakers:'', hall:'Main auditorium' })});
+    editingSession = s.id;
+    renderApp();
+  };
+
+  document.querySelectorAll('[data-startpending]').forEach(b => b.onclick = () => { editingGuestName = b.dataset.startpending; renderApp(); });
+  const cancelPending = document.getElementById('cancelPendingBtn');
+  if(cancelPending) cancelPending.onclick = () => { editingGuestName = null; renderApp(); };
+  const savePending = document.getElementById('savePendingBtn');
+  if(savePending) savePending.onclick = async () => {
+    try {
+      await api('/api/guests', { method:'POST', body: JSON.stringify({
+        name: savePending.dataset.name, role: document.getElementById('pfRole').value,
+        arrivalDay: document.getElementById('pfArrDay').value, arrivalTime: document.getElementById('pfArrTime').value, arrivalDetail: document.getElementById('pfArrDetail').value,
+        departDay: document.getElementById('pfDepDay').value, departTime: document.getElementById('pfDepTime').value, departDetail: document.getElementById('pfDepDetail').value,
+        hotel: document.getElementById('pfHotel').value, cabDriver: document.getElementById('pfCabDriver').value, cabPhone: document.getElementById('pfCabPhone').value,
+        shadowName: document.getElementById('pfShadowName').value, shadowPhone: document.getElementById('pfShadowPhone').value
+      })});
+      editingGuestName = null;
+      await loadPending();
+      renderApp();
+    } catch(e){ alert(e.message); }
+  };
+
+  const postBtn = document.getElementById('postStatus');
+  if(postBtn) postBtn.onclick = async () => { await api('/api/status', { method:'POST', body: JSON.stringify({ status: document.getElementById('statusSelect').value })}); };
+
+  const roleSel = document.getElementById('newRoleSelect');
+  if(roleSel) roleSel.onchange = () => { document.getElementById('shadowGuestField').style.display = roleSel.value==='shadow' ? 'block' : 'none'; };
+  const addMemberBtn = document.getElementById('addMemberBtn');
+  if(addMemberBtn) addMemberBtn.onclick = async () => {
+    try {
+      const role = document.getElementById('newRoleSelect').value;
+      await api('/api/users', { method:'POST', body: JSON.stringify({
+        name: document.getElementById('newNameInput').value, phone: document.getElementById('newPhoneInput').value,
+        role, m2m:'none', logistics:'none', guestId: role==='shadow' ? document.getElementById('newGuestName').value : undefined
+      })});
+      users = await api('/api/users');
+      renderApp();
+    } catch(e){ alert(e.message); }
+  };
+  document.querySelectorAll('.segbtn').forEach(b => b.onclick = async () => {
+    await api('/api/users/'+b.dataset.person, { method:'PUT', body: JSON.stringify({ [b.dataset.key]: b.dataset.level })});
+  });
+}
+
+if(token && me){ showApp(); } else { showLogin(); }
+</script>
+</body>
+</html>

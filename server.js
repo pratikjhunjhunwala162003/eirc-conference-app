@@ -47,15 +47,33 @@ function speakerNamesFromM2M(){
   const names = new Set();
   db.sessions.forEach(s => {
     (s.speakers || '').split(',').map(x => x.trim()).filter(Boolean).forEach(n => names.add(n));
-    (s.vot || '').split(',').map(x => x.trim()).filter(Boolean).forEach(n => names.add(n));
   });
   return [...names];
 }
 function sessionForSpeaker(name){
-  return db.sessions.find(s =>
-    (s.speakers || '').split(',').map(x => x.trim()).includes(name) ||
-    (s.vot || '').split(',').map(x => x.trim()).includes(name)
-  );
+  return db.sessions.find(s => (s.speakers || '').split(',').map(x => x.trim()).includes(name));
+}
+
+// If a guest's name no longer appears in ANY session's speaker list — because a session was
+// deleted, or their name was edited out of one — their finalized logistics shouldn't exist
+// either, and no shadow should still be pointed at them.
+function pruneOrphanedGuests(){
+  const validNames = speakerNamesFromM2M();
+  const removed = db.guests.filter(g => !validNames.includes(g.name));
+  if(!removed.length) return;
+  const removedIds = removed.map(g => g.id);
+  db.guests = db.guests.filter(g => validNames.includes(g.name));
+  let usersChanged = false;
+  db.users.forEach(u => {
+    if(u.role === 'shadow' && Array.isArray(u.guestIds)){
+      const before = u.guestIds.length;
+      u.guestIds = u.guestIds.filter(id => !removedIds.includes(id));
+      if(u.guestIds.length !== before) usersChanged = true;
+    }
+  });
+  saveDB(db);
+  io.emit('guests:updated', db.guests);
+  if(usersChanged) io.emit('users:updated', db.users.map(publicUser));
 }
 
 // ---------- Auth middleware ----------
@@ -112,8 +130,8 @@ app.post('/api/auth/verify-otp', (req, res) => {
 });
 
 function publicUser(u){
-  const { id, name, role, m2m, logistics, guestId } = u;
-  return { id, name, role, m2m, logistics, guestId };
+  const { id, name, role, m2m, logistics, guestIds } = u;
+  return { id, name, role, m2m, logistics, guestIds };
 }
 
 // ---------- M2M ----------
@@ -134,6 +152,7 @@ app.put('/api/sessions/:id', auth, requireM2MEdit, (req, res) => {
   Object.assign(s, req.body);
   saveDB(db);
   io.emit('sessions:updated', db.sessions);
+  pruneOrphanedGuests();
   res.json(s);
 });
 
@@ -141,13 +160,14 @@ app.delete('/api/sessions/:id', auth, requireM2MEdit, (req, res) => {
   db.sessions = db.sessions.filter(x => x.id !== req.params.id);
   saveDB(db);
   io.emit('sessions:updated', db.sessions);
+  pruneOrphanedGuests();
   res.json({ ok: true });
 });
 
 // ---------- Logistics ----------
 
 app.get('/api/guests', auth, (req, res) => {
-  if(req.user.role === 'shadow') return res.json(db.guests.filter(g => g.id === req.user.guestId));
+  if(req.user.role === 'shadow') return res.json(db.guests.filter(g => (req.user.guestIds||[]).includes(g.id)));
   res.json(db.guests);
 });
 
@@ -189,28 +209,20 @@ app.put('/api/guests/:id', auth, requireLogisticsEdit, (req, res) => {
   res.json(g);
 });
 
-app.put('/api/guests/:id', auth, requireLogisticsEdit, (req, res) => {
-  const g = db.guests.find(x => x.id === req.params.id);
-  if(!g) return res.status(404).json({ error: 'Not found' });
-  Object.assign(g, req.body);
-  saveDB(db);
-  io.emit('guests:updated', db.guests);
-  res.json(g);
-});
-
 // ---------- Live status ----------
 
 app.get('/api/status', auth, (req, res) => {
   if(req.user.role === 'shadow'){
-    const g = db.guests.find(x => x.id === req.user.guestId);
-    return res.json(db.statusLog.filter(s => s.guest === (g && g.name)));
+    const myNames = db.guests.filter(g => (req.user.guestIds||[]).includes(g.id)).map(g => g.name);
+    return res.json(db.statusLog.filter(s => myNames.includes(s.guest)));
   }
   res.json(db.statusLog);
 });
 
 app.post('/api/status', auth, (req, res) => {
   if(req.user.role !== 'shadow') return res.status(403).json({ error: 'Only a shadow can post status, for their own guest' });
-  const g = db.guests.find(x => x.id === req.user.guestId);
+  const g = db.guests.find(x => x.id === req.body.guestId && (req.user.guestIds||[]).includes(x.id));
+  if(!g) return res.status(403).json({ error: 'That guest is not assigned to you' });
   const entry = { guest: g.name, status: req.body.status, time: new Date().toLocaleString() };
   db.statusLog.push(entry);
   saveDB(db);
@@ -223,10 +235,10 @@ app.post('/api/status', auth, (req, res) => {
 app.get('/api/users', auth, requireAdmin, (req, res) => res.json(db.users.map(publicUser)));
 
 app.post('/api/users', auth, requireAdmin, (req, res) => {
-  const { name, phone, role, m2m, logistics, guestId } = req.body;
+  const { name, phone, role, m2m, logistics, guestIds } = req.body;
   if(!name || !phone) return res.status(400).json({ error: 'Name and phone are both required' });
   if(db.users.find(u => u.phone === phone)) return res.status(409).json({ error: 'This phone number is already registered' });
-  const u = { id: 'u' + Date.now(), name, phone, role: role || 'member', m2m: m2m || 'none', logistics: logistics || 'none', guestId };
+  const u = { id: 'u' + Date.now(), name, phone, role: role || 'member', m2m: m2m || 'none', logistics: logistics || 'none', guestIds: guestIds || [] };
   db.users.push(u);
   saveDB(db);
   io.emit('users:updated', db.users.map(publicUser));

@@ -25,22 +25,15 @@ function loadDB(){
     users: [
       // role: 'admin' | 'member' | 'shadow'
       // m2m/logistics permission only meaningful for 'member': 'none' | 'view' | 'edit'
-      { id: 'u1', name: 'CA Mayur Agarwal', phone: '9830100001', role: 'admin', m2m: 'edit', logistics: 'edit' },
-      { id: 'u2', name: 'Pratik (M2M head)', phone: '9007388214', role: 'member', m2m: 'edit', logistics: 'none' },
-      { id: 'u3', name: 'Kaushik', phone: '9830122223', role: 'member', m2m: 'view', logistics: 'edit' },
-      { id: 'u4', name: 'Partha', phone: '9830111112', role: 'member', m2m: 'view', logistics: 'view' },
-      { id: 'u5', name: 'CA Pratik Jhunjhunwala', phone: '9007388215', role: 'shadow', guestId: null },
+      { id: 'u1', name: 'CA Mayur Agarwal', phone: '9903349773', role: 'admin' },
+      { id: 'u2', name: 'CA Aditya Maheshwari', phone: '9733044550', role: 'admin' },
     ],
-    sessions: [
-      { id: 'sn1', day: '19 Dec', time: '09:30', end: '10:00', topic: 'Inaugural address', chairman: 'CA Vivek Newatia', speakers: 'CA Ranjeet Kumar Agarwal', hall: 'Main auditorium' },
-      { id: 'sn3', day: '19 Dec', time: '14:30', end: '15:45', topic: 'M&A and transaction structuring panel', chairman: 'CA Nisha Poddar', speakers: 'Tejas Goenka, CA Arjun Mehta', hall: 'Main auditorium' },
-      { id: 'sn5', day: '20 Dec', time: '15:00', end: '15:45', topic: 'Valedictory session', chairman: 'CA Vivek Newatia', speakers: 'All chief guests, Tehseen Poonawalla', hall: 'Main auditorium' },
-    ],
+    sessions: [],
     guests: [],
-    statusLog: [
-      { guest: 'Tehseen Poonawalla', status: 'Arrived airport', time: '20 Dec, 06:52' },
-    ],
-    otps: {} // phone -> { code, expires }
+    statusLog: [],
+    otps: {}, // phone -> { code, expires }
+    // Real calendar date behind each M2M day label. Editable by admin in the app (Manage access).
+    dayDates: { 'Day 1': '2026-12-19', 'Day 2': '2026-12-20' }
   };
   fs.writeFileSync(DB_FILE, JSON.stringify(seed, null, 2));
   return seed;
@@ -54,11 +47,15 @@ function speakerNamesFromM2M(){
   const names = new Set();
   db.sessions.forEach(s => {
     (s.speakers || '').split(',').map(x => x.trim()).filter(Boolean).forEach(n => names.add(n));
+    (s.vot || '').split(',').map(x => x.trim()).filter(Boolean).forEach(n => names.add(n));
   });
   return [...names];
 }
 function sessionForSpeaker(name){
-  return db.sessions.find(s => (s.speakers || '').split(',').map(x => x.trim()).includes(name));
+  return db.sessions.find(s =>
+    (s.speakers || '').split(',').map(x => x.trim()).includes(name) ||
+    (s.vot || '').split(',').map(x => x.trim()).includes(name)
+  );
 }
 
 // ---------- Auth middleware ----------
@@ -243,6 +240,30 @@ app.put('/api/users/:id', auth, requireAdmin, (req, res) => {
   saveDB(db);
   io.emit('users:updated', db.users.map(publicUser));
   res.json(publicUser(u));
+});
+
+// Revoke someone's access entirely.
+app.delete('/api/users/:id', auth, requireAdmin, (req, res) => {
+  const u = db.users.find(x => x.id === req.params.id);
+  if(!u) return res.status(404).json({ error: 'Not found' });
+  if(u.role === 'admin' && db.users.filter(x => x.role === 'admin').length <= 1){
+    return res.status(400).json({ error: 'Cannot remove the last remaining admin — add another admin first.' });
+  }
+  db.users = db.users.filter(x => x.id !== req.params.id);
+  saveDB(db);
+  io.emit('users:updated', db.users.map(publicUser));
+  res.json({ ok: true });
+});
+
+// The real calendar date behind "Day 1" / "Day 2" — this is what makes next-2-hours,
+// and every other time comparison, reliable instead of guessing from typed text.
+app.get('/api/day-dates', auth, (req, res) => res.json(db.dayDates));
+
+app.put('/api/day-dates', auth, requireAdmin, (req, res) => {
+  Object.assign(db.dayDates, req.body);
+  saveDB(db);
+  io.emit('daydates:updated', db.dayDates);
+  res.json(db.dayDates);
 });
 
 io.on('connection', (socket) => {

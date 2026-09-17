@@ -102,6 +102,7 @@ let token = localStorage.getItem('eirc_token');
 let me = JSON.parse(localStorage.getItem('eirc_user') || 'null');
 let screen = 'home';
 let sessions = [], guests = [], statusLog = [], users = [], pendingLogistics = [];
+let dayDates = { 'Day 1': '2026-12-19', 'Day 2': '2026-12-20' };
 let editingSession = null, editingGuestName = null, editingGuestId = null, editingUserId = null;
 let socket = null;
 
@@ -165,12 +166,14 @@ function connectSocket(){
   socket.on('guests:updated', g => { guests = g; loadPending().then(renderApp); });
   socket.on('status:updated', s => { statusLog = s; renderApp(); });
   socket.on('users:updated', u => { users = u; renderApp(); });
+  socket.on('daydates:updated', d => { dayDates = d; renderApp(); });
 }
 
 async function loadEverything(){
   sessions = await api('/api/sessions');
   guests = await api('/api/guests');
   statusLog = await api('/api/status');
+  dayDates = await api('/api/day-dates');
   if(me.role === 'admin') users = await api('/api/users');
   if(me.role === 'admin' || (me.role === 'member' && me.logistics !== 'none')) await loadPending();
   renderApp();
@@ -187,22 +190,14 @@ function canEditM2M(){ return me.role==='admin' || (me.role==='member' && me.m2m
 function canViewLogistics(){ return me.role==='admin' || (me.role==='member' && me.logistics!=='none'); }
 function canEditLogistics(){ return me.role==='admin' || (me.role==='member' && me.logistics==='edit'); }
 
-// Parses a "19 Dec" + "06:45" style pair into a real Date, guessing the year from today's date.
+// Builds a real Date from a "Day 1"/"Day 2" label plus a HH:MM time, using the
+// actual calendar date the admin has set for that day (see Manage access -> Conference dates).
 function parseDayTime(dayLabel, timeLabel){
   if(!dayLabel || !timeLabel) return null;
-  const now = new Date();
-  const months = {Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11};
-  const parts = dayLabel.trim().split(' ');
-  if(parts.length < 2) return null;
-  const day = parseInt(parts[0]);
-  const mon = months[parts[1].slice(0,3)];
-  if(isNaN(day) || mon === undefined) return null;
-  const [hh, mm] = (timeLabel||'00:00').split(':').map(Number);
-  let year = now.getFullYear();
-  let d = new Date(year, mon, day, hh||0, mm||0);
-  // if that date is more than 250 days in the past, assume it means next year instead
-  if((now - d) / (1000*60*60*24) > 250) d = new Date(year+1, mon, day, hh||0, mm||0);
-  return d;
+  const iso = dayDates[dayLabel];
+  if(!iso) return null;
+  const d = new Date(iso + 'T' + timeLabel + ':00+05:30');
+  return isNaN(d.getTime()) ? null : d;
 }
 function within2Hours(d){
   if(!d) return false;
@@ -210,11 +205,32 @@ function within2Hours(d){
   const diffMin = (d - now) / 60000;
   return diffMin >= 0 && diffMin <= 120;
 }
+// For M2M sessions, which genuinely only happen on the conference's own two days.
+function dayLabelWithDate(day){
+  if(!day) return '';
+  const iso = dayDates[day];
+  if(!iso) return day;
+  const d = new Date(iso + 'T00:00:00+05:30');
+  return day + ' (' + d.toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' }) + ')';
+}
+
+// For guests: arrival/departure use a real calendar date, since a guest can arrive days
+// before the conference or leave days after it — never tied to the M2M's Day 1/Day 2.
+function parseGuestDateTime(dateStr, timeStr){
+  if(!dateStr || !timeStr) return null;
+  const d = new Date(dateStr + 'T' + timeStr + ':00+05:30');
+  return isNaN(d.getTime()) ? null : d;
+}
+function formatDateNice(dateStr){
+  if(!dateStr) return '';
+  const d = new Date(dateStr + 'T00:00:00+05:30');
+  return d.toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' });
+}
 function next2HoursList(){
   const items = [];
   guests.forEach(g => {
-    const arr = parseDayTime(g.arrivalDay, g.arrivalTime);
-    const dep = parseDayTime(g.departDay, g.departTime);
+    const arr = parseGuestDateTime(g.arrivalDate, g.arrivalTime);
+    const dep = parseGuestDateTime(g.departDate, g.departTime);
     if(within2Hours(arr)) items.push({ g, kind:'Arrival', at: arr, detail: g.arrivalDetail });
     if(within2Hours(dep)) items.push({ g, kind:'Departure', at: dep, detail: g.departDetail });
   });
@@ -265,22 +281,26 @@ function renderM2M(){
   const editable = canEditM2M();
   let html = '<h2 class="page-title">M2M schedule</h2><p class="page-sub">' + (editable ? 'You can edit this — changes go live for everyone instantly.' : 'View only.') + '</p>';
   if(editable) html += '<button class="big" id="addSessionBtn" style="margin-bottom:16px;">+ Add a session</button>';
-  const days = [...new Set(sessions.map(s=>s.day))];
+  const days = ['Day 1','Day 2'];
   days.forEach(d => {
-    html += '<p class="section-label">' + d + '</p>';
-    sessions.filter(s=>s.day===d).forEach(s => {
+    html += '<p class="section-label">' + dayLabelWithDate(d) + '</p>';
+    const daySessions = sessions.filter(s=>s.day===d);
+    if(!daySessions.length) html += '<p class="empty">No sessions yet for ' + d + '.</p>';
+    daySessions.forEach(s => {
       if(editingSession===s.id){
         html += card(
-          '<div class="grid2"><input id="edTime" type="time" value="' + s.time + '"><input id="edEnd" type="time" value="' + s.end + '"></div>' +
+          '<label class="field-label">Day</label><select id="edDay"><option value="Day 1"' + (s.day==='Day 1'?' selected':'') + '>Day 1</option><option value="Day 2"' + (s.day==='Day 2'?' selected':'') + '>Day 2</option></select>' +
+          '<div class="grid2"><div><label class="field-label">Start time</label><input id="edTime" type="time" value="' + s.time + '"></div><div><label class="field-label">End time</label><input id="edEnd" type="time" value="' + s.end + '"></div></div>' +
           '<label class="field-label">Session topic</label><input id="edTopic" type="text" value="' + s.topic + '">' +
-          '<label class="field-label">Chairman</label><input id="edChairman" type="text" value="' + s.chairman + '">' +
-          '<label class="field-label">Speakers (comma separated)</label><input id="edSpeakers" type="text" value="' + s.speakers + '">' +
+          '<label class="field-label">Session chairman</label><input id="edChairman" type="text" value="' + s.chairman + '">' +
+          '<label class="field-label">Speaker name(s) — comma separated</label><input id="edSpeakers" type="text" value="' + s.speakers + '">' +
+          '<label class="field-label">VoT (Vote of Thanks) — comma separated</label><input id="edVot" type="text" value="' + (s.vot||'') + '">' +
           '<label class="field-label">Hall</label><input id="edHall" type="text" value="' + s.hall + '">' +
           '<div class="grid2"><button class="big" id="saveSessionBtn" data-id="' + s.id + '">Save</button><button class="secondary" id="cancelSessionBtn">Cancel</button></div>'
         );
       } else {
         html += card(
-          '<div class="row" style="align-items:flex-start;"><span class="accent" style="width:56px; flex-shrink:0; padding-top:2px;">' + s.time + '</span><div style="flex:1; min-width:0;"><p style="font-weight:800;">' + s.topic + '</p><p class="muted">Chairman: ' + s.chairman + '</p><p class="muted">Speakers: ' + s.speakers + '</p><p class="tiny-muted">' + s.hall + '</p></div></div>' +
+          '<div class="row" style="align-items:flex-start;"><span class="accent" style="width:56px; flex-shrink:0; padding-top:2px;">' + s.time + '</span><div style="flex:1; min-width:0;"><p style="font-weight:800;">' + s.topic + '</p><p class="muted">Chairman: ' + s.chairman + '</p><p class="muted">Speakers: ' + s.speakers + '</p>' + (s.vot ? '<p class="muted">VoT: ' + s.vot + '</p>' : '') + '<p class="tiny-muted">' + s.hall + ' - ends ' + s.end + '</p></div></div>' +
           (editable ? '<div style="display:flex; gap:8px; margin-top:10px;"><button class="secondary" data-edit="' + s.id + '">Edit</button><button class="danger-outline" data-del="' + s.id + '">Delete</button></div>' : '')
         );
       }
@@ -296,8 +316,8 @@ function guestCard(g, editable){
     '<p class="tiny-muted" style="font-weight:800;">SESSION <span class="tiny-muted" style="font-weight:400;">(auto from M2M)</span></p>' +
     '<p style="font-weight:700;">' + (s?s.topic:'') + '</p><p class="muted">' + (s?(s.day+', '+s.time+'-'+s.end+' - '+s.hall):'') + '</p>' +
     '<p class="tiny-muted" style="font-weight:800; margin-top:12px;">TRAVEL</p>' +
-    '<p class="muted">Arrival: ' + (g.arrivalDay||'') + ' ' + (g.arrivalTime||'') + ' - ' + (g.arrivalDetail||'') + '</p>' +
-    '<p class="muted">Departure: ' + (g.departDay||'') + ' ' + (g.departTime||'') + ' - ' + (g.departDetail||'') + '</p>' +
+    '<p class="muted">Arrival: ' + formatDateNice(g.arrivalDate) + ' ' + (g.arrivalTime||'') + ' - ' + (g.arrivalDetail||'') + '</p>' +
+    '<p class="muted">Departure: ' + formatDateNice(g.departDate) + ' ' + (g.departTime||'') + ' - ' + (g.departDetail||'') + '</p>' +
     '<p class="muted">Hotel: ' + (g.hotel||'') + '</p>' +
     '<p class="tiny-muted" style="font-weight:800; margin-top:12px;">CAB AND DRIVER</p>' +
     '<p class="muted">Driver: ' + (g.cabDriver||'') + ' - ' + (g.cabPhone||'') + '</p>' +
@@ -311,9 +331,9 @@ function editGuestForm(g){
   return card(
     '<p style="font-weight:800; margin-bottom:8px;">Editing logistics for ' + g.name + '</p>' +
     '<label class="field-label">Role or category</label><input id="pfRole" type="text" placeholder="e.g. Speaker, Chief guest, Panelist" value="' + (g.role||'') + '">' +
-    '<div class="grid2"><div><label class="field-label">Arrival day</label><input id="pfArrDay" type="text" value="' + (g.arrivalDay||'') + '"></div><div><label class="field-label">Arrival time</label><input id="pfArrTime" type="time" value="' + (g.arrivalTime||'') + '"></div></div>' +
+    '<div class="grid2"><div><label class="field-label">Arrival date</label><input id="pfArrDate" type="date" value="' + (g.arrivalDate||'') + '"></div><div><label class="field-label">Arrival time</label><input id="pfArrTime" type="time" value="' + (g.arrivalTime||'') + '"></div></div>' +
     '<label class="field-label">Arrival detail</label><input id="pfArrDetail" type="text" value="' + (g.arrivalDetail||'') + '">' +
-    '<div class="grid2"><div><label class="field-label">Departure day</label><input id="pfDepDay" type="text" value="' + (g.departDay||'') + '"></div><div><label class="field-label">Departure time</label><input id="pfDepTime" type="time" value="' + (g.departTime||'') + '"></div></div>' +
+    '<div class="grid2"><div><label class="field-label">Departure date</label><input id="pfDepDate" type="date" value="' + (g.departDate||'') + '"></div><div><label class="field-label">Departure time</label><input id="pfDepTime" type="time" value="' + (g.departTime||'') + '"></div></div>' +
     '<label class="field-label">Departure detail</label><input id="pfDepDetail" type="text" value="' + (g.departDetail||'') + '">' +
     '<label class="field-label">Hotel and room</label><input id="pfHotel" type="text" value="' + (g.hotel||'') + '">' +
     '<label class="field-label">Driver name</label><input id="pfCabDriver" type="text" value="' + (g.cabDriver||'') + '">' +
@@ -330,9 +350,9 @@ function pendingForm(p){
     '<p style="font-weight:800; margin-bottom:8px;">Finalize logistics for ' + p.name + '</p>' +
     '<p class="tiny-muted" style="margin-bottom:10px;">' + p.session + '</p>' +
     '<label class="field-label">Role or category</label><input id="pfRole" type="text" placeholder="e.g. Speaker, Chief guest, Panelist">' +
-    '<div class="grid2"><div><label class="field-label">Arrival day</label><input id="pfArrDay" type="text" placeholder="19 Dec"></div><div><label class="field-label">Arrival time</label><input id="pfArrTime" type="time"></div></div>' +
+    '<div class="grid2"><div><label class="field-label">Arrival date</label><input id="pfArrDate" type="date"></div><div><label class="field-label">Arrival time</label><input id="pfArrTime" type="time"></div></div>' +
     '<label class="field-label">Arrival detail</label><input id="pfArrDetail" type="text" placeholder="Flight AI 771, Kolkata airport">' +
-    '<div class="grid2"><div><label class="field-label">Departure day</label><input id="pfDepDay" type="text" placeholder="20 Dec"></div><div><label class="field-label">Departure time</label><input id="pfDepTime" type="time"></div></div>' +
+    '<div class="grid2"><div><label class="field-label">Departure date</label><input id="pfDepDate" type="date"></div><div><label class="field-label">Departure time</label><input id="pfDepTime" type="time"></div></div>' +
     '<label class="field-label">Departure detail</label><input id="pfDepDetail" type="text" placeholder="Flight AI 776, Kolkata airport">' +
     '<label class="field-label">Hotel and room</label><input id="pfHotel" type="text">' +
     '<label class="field-label">Driver name</label><input id="pfCabDriver" type="text">' +
@@ -390,6 +410,15 @@ function segControl(personId, key, current){
 
 function renderAccess(){
   let html = '<h2 class="page-title">Manage access</h2><p class="page-sub">Add anyone by name and phone number, then set exactly what they can see and edit.</p>';
+
+  html += '<p class="section-label">Conference dates</p>';
+  html += card(
+    '<p class="tiny-muted" style="margin-bottom:10px;">This sets what "Day 1" and "Day 2" mean on the M2M schedule. Guest arrivals and departures use their own real dates directly, so a guest can still arrive early or leave late without being tied to these two days.</p>' +
+    '<label class="field-label">Day 1 date</label><input id="day1Input" type="date" value="' + (dayDates['Day 1']||'') + '">' +
+    '<label class="field-label">Day 2 date</label><input id="day2Input" type="date" value="' + (dayDates['Day 2']||'') + '">' +
+    '<button class="big" id="saveDayDatesBtn">Save conference dates</button>'
+  );
+
   html += '<div class="add-inline">' +
     '<label class="field-label">Full name</label><input id="newNameInput" type="text" placeholder="e.g. Riya Sen">' +
     '<label class="field-label">Phone number</label><input id="newPhoneInput" type="tel" placeholder="10-digit mobile number">' +
@@ -414,7 +443,7 @@ function renderAccess(){
           '<div class="grid2"><button class="big" id="saveUserBtn" data-id="' + m.id + '" data-role="shadow">Save</button><button class="secondary" id="cancelUserBtn">Cancel</button></div>'
         );
       }
-      return card('<p style="font-weight:800;">' + m.name + ' <span class="role-tag view">Shadow</span></p><p class="tiny-muted">' + m.phone + '</p><p class="muted" style="margin-top:6px;">Assigned to: ' + (linkedGuest ? linkedGuest.name : 'Not assigned yet') + '</p><button class="secondary" style="margin-top:10px;" data-edituser="' + m.id + '">Edit</button>');
+      return card('<p style="font-weight:800;">' + m.name + ' <span class="role-tag view">Shadow</span></p><p class="tiny-muted">' + m.phone + '</p><p class="muted" style="margin-top:6px;">Assigned to: ' + (linkedGuest ? linkedGuest.name : 'Not assigned yet') + '</p><div class="grid2" style="margin-top:10px;"><button class="secondary" data-edituser="' + m.id + '">Edit</button><button class="danger-outline" data-deluser="' + m.id + '">Remove access</button></div>');
     }
     if(editingThis){
       return card(
@@ -427,7 +456,7 @@ function renderAccess(){
       '<p style="font-weight:800;">' + m.name + badge(m.m2m,'M2M') + badge(m.logistics,'Logistics') + '</p><p class="tiny-muted">' + m.phone + '</p>' +
       '<div style="margin-top:10px; display:flex; justify-content:space-between; align-items:center;"><span style="font-size:13px; font-weight:700;">M2M access</span>' + segControl(m.id,'m2m',m.m2m) + '</div>' +
       '<div style="margin-top:8px; display:flex; justify-content:space-between; align-items:center;"><span style="font-size:13px; font-weight:700;">Logistics access</span>' + segControl(m.id,'logistics',m.logistics) + '</div>' +
-      '<button class="secondary" style="margin-top:12px;" data-edituser="' + m.id + '">Edit name / phone</button>'
+      '<div class="grid2" style="margin-top:12px;"><button class="secondary" data-edituser="' + m.id + '">Edit name / phone</button><button class="danger-outline" data-deluser="' + m.id + '">Remove access</button></div>'
     );
   }).join('');
 
@@ -440,7 +469,7 @@ function renderAccess(){
         '<div class="grid2"><button class="big" id="saveUserBtn" data-id="' + a.id + '" data-role="admin">Save</button><button class="secondary" id="cancelUserBtn">Cancel</button></div>'
       );
     }
-    return card('<p style="font-weight:800;">' + a.name + '</p><p class="tiny-muted">' + a.phone + '</p><button class="secondary" style="margin-top:10px;" data-edituser="' + a.id + '">Edit name / phone</button>');
+    return card('<p style="font-weight:800;">' + a.name + '</p><p class="tiny-muted">' + a.phone + '</p><div class="grid2" style="margin-top:10px;"><button class="secondary" data-edituser="' + a.id + '">Edit name / phone</button><button class="danger-outline" data-deluser="' + a.id + '">Remove admin</button></div>');
   }).join('');
   return html;
 }
@@ -475,16 +504,17 @@ function wireEvents(){
   if(saveBtn) saveBtn.onclick = async () => {
     const id = saveBtn.dataset.id;
     await api('/api/sessions/'+id, { method:'PUT', body: JSON.stringify({
+      day: document.getElementById('edDay').value,
       time: document.getElementById('edTime').value, end: document.getElementById('edEnd').value,
       topic: document.getElementById('edTopic').value, chairman: document.getElementById('edChairman').value,
-      speakers: document.getElementById('edSpeakers').value, hall: document.getElementById('edHall').value
+      speakers: document.getElementById('edSpeakers').value, vot: document.getElementById('edVot').value, hall: document.getElementById('edHall').value
     })});
     editingSession = null;
   };
   document.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => { await api('/api/sessions/'+b.dataset.del, { method:'DELETE' }); });
   const addSessionBtn = document.getElementById('addSessionBtn');
   if(addSessionBtn) addSessionBtn.onclick = async () => {
-    const s = await api('/api/sessions', { method:'POST', body: JSON.stringify({ day:'19 Dec', time:'12:00', end:'12:30', topic:'New session - tap edit to fill in', chairman:'', speakers:'', hall:'Main auditorium' })});
+    const s = await api('/api/sessions', { method:'POST', body: JSON.stringify({ day:'Day 1', time:'12:00', end:'12:30', topic:'New session - tap edit to fill in', chairman:'', speakers:'', vot:'', hall:'Main auditorium' })});
     editingSession = s.id;
     renderApp();
   };
@@ -497,8 +527,8 @@ function wireEvents(){
     try {
       await api('/api/guests', { method:'POST', body: JSON.stringify({
         name: savePending.dataset.name, role: document.getElementById('pfRole').value,
-        arrivalDay: document.getElementById('pfArrDay').value, arrivalTime: document.getElementById('pfArrTime').value, arrivalDetail: document.getElementById('pfArrDetail').value,
-        departDay: document.getElementById('pfDepDay').value, departTime: document.getElementById('pfDepTime').value, departDetail: document.getElementById('pfDepDetail').value,
+        arrivalDate: document.getElementById('pfArrDate').value, arrivalTime: document.getElementById('pfArrTime').value, arrivalDetail: document.getElementById('pfArrDetail').value,
+        departDate: document.getElementById('pfDepDate').value, departTime: document.getElementById('pfDepTime').value, departDetail: document.getElementById('pfDepDetail').value,
         hotel: document.getElementById('pfHotel').value, cabDriver: document.getElementById('pfCabDriver').value, cabPhone: document.getElementById('pfCabPhone').value,
         shadowName: document.getElementById('pfShadowName').value, shadowPhone: document.getElementById('pfShadowPhone').value
       })});
@@ -516,8 +546,8 @@ function wireEvents(){
     try {
       await api('/api/guests/'+saveEditGuest.dataset.id, { method:'PUT', body: JSON.stringify({
         role: document.getElementById('pfRole').value,
-        arrivalDay: document.getElementById('pfArrDay').value, arrivalTime: document.getElementById('pfArrTime').value, arrivalDetail: document.getElementById('pfArrDetail').value,
-        departDay: document.getElementById('pfDepDay').value, departTime: document.getElementById('pfDepTime').value, departDetail: document.getElementById('pfDepDetail').value,
+        arrivalDate: document.getElementById('pfArrDate').value, arrivalTime: document.getElementById('pfArrTime').value, arrivalDetail: document.getElementById('pfArrDetail').value,
+        departDate: document.getElementById('pfDepDate').value, departTime: document.getElementById('pfDepTime').value, departDetail: document.getElementById('pfDepDetail').value,
         hotel: document.getElementById('pfHotel').value, cabDriver: document.getElementById('pfCabDriver').value, cabPhone: document.getElementById('pfCabPhone').value,
         shadowName: document.getElementById('pfShadowName').value, shadowPhone: document.getElementById('pfShadowPhone').value
       })});
@@ -545,6 +575,25 @@ function wireEvents(){
     } catch(e){ alert(e.message); }
   };
   document.querySelectorAll('[data-edituser]').forEach(b => b.onclick = () => { editingUserId = b.dataset.edituser; renderApp(); });
+  document.querySelectorAll('[data-deluser]').forEach(b => b.onclick = async () => {
+    if(!confirm('Remove this person\'s access to the app? They will no longer be able to log in.')) return;
+    try {
+      await api('/api/users/'+b.dataset.deluser, { method:'DELETE' });
+      users = await api('/api/users');
+      renderApp();
+    } catch(e){ alert(e.message); }
+  });
+  const saveDayDatesBtn = document.getElementById('saveDayDatesBtn');
+  if(saveDayDatesBtn) saveDayDatesBtn.onclick = async () => {
+    try {
+      dayDates = await api('/api/day-dates', { method:'PUT', body: JSON.stringify({
+        'Day 1': document.getElementById('day1Input').value,
+        'Day 2': document.getElementById('day2Input').value
+      })});
+      renderApp();
+      alert('Conference dates saved.');
+    } catch(e){ alert(e.message); }
+  };
   const cancelUserBtn = document.getElementById('cancelUserBtn');
   if(cancelUserBtn) cancelUserBtn.onclick = () => { editingUserId = null; renderApp(); };
   const saveUserBtn = document.getElementById('saveUserBtn');

@@ -29,20 +29,14 @@ function loadDB(){
       { id: 'u2', name: 'Pratik (M2M head)', phone: '9007388214', role: 'member', m2m: 'edit', logistics: 'none' },
       { id: 'u3', name: 'Kaushik', phone: '9830122223', role: 'member', m2m: 'view', logistics: 'edit' },
       { id: 'u4', name: 'Partha', phone: '9830111112', role: 'member', m2m: 'view', logistics: 'view' },
-      { id: 'u5', name: 'CA Pratik Jhunjhunwala', phone: '9007388215', role: 'shadow', guestId: 'g3' },
+      { id: 'u5', name: 'CA Pratik Jhunjhunwala', phone: '9007388215', role: 'shadow', guestId: null },
     ],
     sessions: [
       { id: 'sn1', day: '19 Dec', time: '09:30', end: '10:00', topic: 'Inaugural address', chairman: 'CA Vivek Newatia', speakers: 'CA Ranjeet Kumar Agarwal', hall: 'Main auditorium' },
       { id: 'sn3', day: '19 Dec', time: '14:30', end: '15:45', topic: 'M&A and transaction structuring panel', chairman: 'CA Nisha Poddar', speakers: 'Tejas Goenka, CA Arjun Mehta', hall: 'Main auditorium' },
       { id: 'sn5', day: '20 Dec', time: '15:00', end: '15:45', topic: 'Valedictory session', chairman: 'CA Vivek Newatia', speakers: 'All chief guests, Tehseen Poonawalla', hall: 'Main auditorium' },
     ],
-    guests: [
-      { id: 'g3', name: 'Tehseen Poonawalla', role: 'Chief guest', sessionId: 'sn5',
-        arrivalDay: '20 Dec', arrivalTime: '06:45', arrivalDetail: 'Flight AI 435, Kolkata airport',
-        departDay: '20 Dec', departTime: '20:15', departDetail: 'Flight AI 438, Kolkata airport',
-        hotel: 'ITC Sonar, room 501',
-        cabDriver: 'Rakesh Mallick', cabPhone: '9832055667', shadowName: 'CA Pratik Jhunjhunwala', shadowPhone: '9007388215', shadowId: 'u5' },
-    ],
+    guests: [],
     statusLog: [
       { guest: 'Tehseen Poonawalla', status: 'Arrived airport', time: '20 Dec, 06:52' },
     ],
@@ -181,8 +175,18 @@ app.post('/api/guests', auth, requireLogisticsEdit, (req, res) => {
   if(!validNames.includes(name)) return res.status(400).json({ error: 'This name is not on the M2M schedule. Ask the M2M coordinator to add the session first — logistics cannot add a name that is not speaking.' });
   if(db.guests.find(g => g.name === name)) return res.status(409).json({ error: 'Logistics for this person is already finalized.' });
   const s = sessionForSpeaker(name);
-  const g = { id: 'g' + Date.now(), name, role: role || 'Speaker', sessionId: s ? s.id : null, arrivalDay, arrivalTime, arrivalDetail, departDay, departTime, departDetail, hotel, cabDriver, cabPhone, shadowName, shadowPhone };
+  const g = { id: 'g' + Date.now(), name, role: role || '', sessionId: s ? s.id : null, arrivalDay, arrivalTime, arrivalDetail, departDay, departTime, departDetail, hotel, cabDriver, cabPhone, shadowName, shadowPhone };
   db.guests.push(g);
+  saveDB(db);
+  io.emit('guests:updated', db.guests);
+  res.json(g);
+});
+
+// Amend an already-finalized guest's logistics. Admin, or whoever holds logistics edit rights.
+app.put('/api/guests/:id', auth, requireLogisticsEdit, (req, res) => {
+  const g = db.guests.find(x => x.id === req.params.id);
+  if(!g) return res.status(404).json({ error: 'Not found' });
+  Object.assign(g, req.body);
   saveDB(db);
   io.emit('guests:updated', db.guests);
   res.json(g);

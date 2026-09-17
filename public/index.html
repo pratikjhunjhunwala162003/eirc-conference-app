@@ -102,7 +102,7 @@ let token = localStorage.getItem('eirc_token');
 let me = JSON.parse(localStorage.getItem('eirc_user') || 'null');
 let screen = 'home';
 let sessions = [], guests = [], statusLog = [], users = [], pendingLogistics = [];
-let editingSession = null, editingGuestName = null;
+let editingSession = null, editingGuestName = null, editingGuestId = null, editingUserId = null;
 let socket = null;
 
 async function api(path, opts){
@@ -187,6 +187,41 @@ function canEditM2M(){ return me.role==='admin' || (me.role==='member' && me.m2m
 function canViewLogistics(){ return me.role==='admin' || (me.role==='member' && me.logistics!=='none'); }
 function canEditLogistics(){ return me.role==='admin' || (me.role==='member' && me.logistics==='edit'); }
 
+// Parses a "19 Dec" + "06:45" style pair into a real Date, guessing the year from today's date.
+function parseDayTime(dayLabel, timeLabel){
+  if(!dayLabel || !timeLabel) return null;
+  const now = new Date();
+  const months = {Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11};
+  const parts = dayLabel.trim().split(' ');
+  if(parts.length < 2) return null;
+  const day = parseInt(parts[0]);
+  const mon = months[parts[1].slice(0,3)];
+  if(isNaN(day) || mon === undefined) return null;
+  const [hh, mm] = (timeLabel||'00:00').split(':').map(Number);
+  let year = now.getFullYear();
+  let d = new Date(year, mon, day, hh||0, mm||0);
+  // if that date is more than 250 days in the past, assume it means next year instead
+  if((now - d) / (1000*60*60*24) > 250) d = new Date(year+1, mon, day, hh||0, mm||0);
+  return d;
+}
+function within2Hours(d){
+  if(!d) return false;
+  const now = new Date();
+  const diffMin = (d - now) / 60000;
+  return diffMin >= 0 && diffMin <= 120;
+}
+function next2HoursList(){
+  const items = [];
+  guests.forEach(g => {
+    const arr = parseDayTime(g.arrivalDay, g.arrivalTime);
+    const dep = parseDayTime(g.departDay, g.departTime);
+    if(within2Hours(arr)) items.push({ g, kind:'Arrival', at: arr, detail: g.arrivalDetail });
+    if(within2Hours(dep)) items.push({ g, kind:'Departure', at: dep, detail: g.departDetail });
+  });
+  items.sort((a,b) => a.at - b.at);
+  return items;
+}
+
 function screensFor(){
   if(me.role==='admin') return [['home','Home'],['m2m','M2M'],['logistics','Logistics'],['status','Status'],['access','Access']];
   if(me.role==='member'){
@@ -203,6 +238,12 @@ function renderHome(){
   let html = '<h2 class="page-title">' + (me.role==='admin' ? 'Admin dashboard' : me.role==='shadow' ? 'Your guest' : 'Dashboard') + '</h2>';
   if(me.role !== 'shadow'){
     html += '<p class="page-sub"><span class="live-dot"></span>Live — updates instantly across every device</p>';
+    if(me.role==='admin' || canViewLogistics()){
+      const upcoming = next2HoursList();
+      html += '<p class="section-label">Next 2 hours</p>';
+      if(!upcoming.length) html += '<p class="empty">No arrivals or departures in the next 2 hours.</p>';
+      else html += upcoming.map(item => card('<div class="row"><div class="avatar">' + initials(item.g.name) + '</div><div style="flex:1;"><p class="name-lg">' + item.g.name + '</p><p class="muted">' + item.detail + '</p></div><span class="status-tag">' + item.kind + '</span></div>')).join('');
+    }
     html += '<p class="section-label">All guests, live status</p>';
     if(!guests.length) html += '<p class="empty">No guest logistics finalized yet.</p>';
     html += guests.map(g => card('<div class="row"><div class="avatar">' + initials(g.name) + '</div><div style="flex:1;"><p class="name-lg">' + g.name + '</p><p class="tiny-muted">' + (g.role||'') + '</p></div></div>')).join('');
@@ -248,10 +289,10 @@ function renderM2M(){
   return html;
 }
 
-function guestCard(g){
+function guestCard(g, editable){
   const s = sessionOf(g);
   return card(
-    '<div class="row" style="margin-bottom:10px;"><div class="avatar">' + initials(g.name) + '</div><div style="flex:1;"><p class="name-lg">' + g.name + '</p><p class="tiny-muted">' + g.role + '</p></div></div>' +
+    '<div class="row" style="margin-bottom:10px;"><div class="avatar">' + initials(g.name) + '</div><div style="flex:1;"><p class="name-lg">' + g.name + '</p><p class="tiny-muted">' + (g.role||'Not classified yet') + '</p></div></div>' +
     '<p class="tiny-muted" style="font-weight:800;">SESSION <span class="tiny-muted" style="font-weight:400;">(auto from M2M)</span></p>' +
     '<p style="font-weight:700;">' + (s?s.topic:'') + '</p><p class="muted">' + (s?(s.day+', '+s.time+'-'+s.end+' - '+s.hall):'') + '</p>' +
     '<p class="tiny-muted" style="font-weight:800; margin-top:12px;">TRAVEL</p>' +
@@ -261,7 +302,26 @@ function guestCard(g){
     '<p class="tiny-muted" style="font-weight:800; margin-top:12px;">CAB AND DRIVER</p>' +
     '<p class="muted">Driver: ' + (g.cabDriver||'') + ' - ' + (g.cabPhone||'') + '</p>' +
     '<p class="tiny-muted" style="font-weight:800; margin-top:12px;">SHADOW</p>' +
-    '<p class="muted">' + (g.shadowName||'') + ' - ' + (g.shadowPhone||'') + '</p>'
+    '<p class="muted">' + (g.shadowName||'Not assigned') + ' - ' + (g.shadowPhone||'') + '</p>' +
+    (editable ? '<button class="secondary" style="margin-top:12px;" data-editguest="' + g.id + '">Edit logistics</button>' : '')
+  );
+}
+
+function editGuestForm(g){
+  return card(
+    '<p style="font-weight:800; margin-bottom:8px;">Editing logistics for ' + g.name + '</p>' +
+    '<label class="field-label">Role or category</label><input id="pfRole" type="text" placeholder="e.g. Speaker, Chief guest, Panelist" value="' + (g.role||'') + '">' +
+    '<div class="grid2"><div><label class="field-label">Arrival day</label><input id="pfArrDay" type="text" value="' + (g.arrivalDay||'') + '"></div><div><label class="field-label">Arrival time</label><input id="pfArrTime" type="time" value="' + (g.arrivalTime||'') + '"></div></div>' +
+    '<label class="field-label">Arrival detail</label><input id="pfArrDetail" type="text" value="' + (g.arrivalDetail||'') + '">' +
+    '<div class="grid2"><div><label class="field-label">Departure day</label><input id="pfDepDay" type="text" value="' + (g.departDay||'') + '"></div><div><label class="field-label">Departure time</label><input id="pfDepTime" type="time" value="' + (g.departTime||'') + '"></div></div>' +
+    '<label class="field-label">Departure detail</label><input id="pfDepDetail" type="text" value="' + (g.departDetail||'') + '">' +
+    '<label class="field-label">Hotel and room</label><input id="pfHotel" type="text" value="' + (g.hotel||'') + '">' +
+    '<label class="field-label">Driver name</label><input id="pfCabDriver" type="text" value="' + (g.cabDriver||'') + '">' +
+    '<label class="field-label">Driver phone</label><input id="pfCabPhone" type="tel" value="' + (g.cabPhone||'') + '">' +
+    '<label class="field-label">Shadow name (for display)</label><input id="pfShadowName" type="text" value="' + (g.shadowName||'') + '">' +
+    '<label class="field-label">Shadow phone</label><input id="pfShadowPhone" type="tel" value="' + (g.shadowPhone||'') + '">' +
+    '<p class="tiny-muted" style="margin:6px 0 10px;">To link this guest to a shadow\\'s own app login, use Manage access instead — that connects their account, not just this display name.</p>' +
+    '<div class="grid2"><button class="big" id="saveEditGuestBtn" data-id="' + g.id + '">Save changes</button><button class="secondary" id="cancelEditGuestBtn">Cancel</button></div>'
   );
 }
 
@@ -269,7 +329,7 @@ function pendingForm(p){
   return card(
     '<p style="font-weight:800; margin-bottom:8px;">Finalize logistics for ' + p.name + '</p>' +
     '<p class="tiny-muted" style="margin-bottom:10px;">' + p.session + '</p>' +
-    '<label class="field-label">Role</label><input id="pfRole" type="text" placeholder="e.g. Speaker" value="Speaker">' +
+    '<label class="field-label">Role or category</label><input id="pfRole" type="text" placeholder="e.g. Speaker, Chief guest, Panelist">' +
     '<div class="grid2"><div><label class="field-label">Arrival day</label><input id="pfArrDay" type="text" placeholder="19 Dec"></div><div><label class="field-label">Arrival time</label><input id="pfArrTime" type="time"></div></div>' +
     '<label class="field-label">Arrival detail</label><input id="pfArrDetail" type="text" placeholder="Flight AI 771, Kolkata airport">' +
     '<div class="grid2"><div><label class="field-label">Departure day</label><input id="pfDepDay" type="text" placeholder="20 Dec"></div><div><label class="field-label">Departure time</label><input id="pfDepTime" type="time"></div></div>' +
@@ -295,7 +355,7 @@ function renderLogistics(){
   }
   html += '<p class="section-label">Finalized</p>';
   if(!guests.length) html += '<p class="empty">Nobody finalized yet.</p>';
-  html += guests.map(guestCard).join('');
+  html += guests.map(g => (editable && editingGuestId===g.id) ? editGuestForm(g) : guestCard(g, editable)).join('');
   return html;
 }
 
@@ -334,21 +394,54 @@ function renderAccess(){
     '<label class="field-label">Full name</label><input id="newNameInput" type="text" placeholder="e.g. Riya Sen">' +
     '<label class="field-label">Phone number</label><input id="newPhoneInput" type="tel" placeholder="10-digit mobile number">' +
     '<label class="field-label">Type</label><select id="newRoleSelect"><option value="member">Office member</option><option value="admin">Admin</option><option value="shadow">Shadow</option></select>' +
-    '<div id="shadowGuestField" style="display:none;"><label class="field-label">Assigned guest name (must match M2M)</label><input id="newGuestName" type="text" placeholder="e.g. Tejas Goenka"></div>' +
+    '<div id="shadowGuestField" style="display:none;">' +
+      '<label class="field-label">Assigned guest</label>' +
+      '<select id="newGuestSelect"><option value="">Not assigned yet — finalize their logistics first</option>' + guests.map(g => '<option value="' + g.id + '">' + g.name + '</option>').join('') + '</select>' +
+    '</div>' +
     '<button class="big" id="addMemberBtn">Add to team</button></div>';
 
   html += '<p class="section-label">Team</p>';
   html += users.filter(u=>u.role!=='admin').map(m => {
     const badge = (lv,label) => lv==='edit' ? '<span class="role-tag edit">' + label + ': edit</span>' : lv==='view' ? '<span class="role-tag view">' + label + ': view</span>' : '';
-    if(m.role==='shadow') return card('<p style="font-weight:800;">' + m.name + ' <span class="role-tag view">Shadow</span></p><p class="tiny-muted">Guest id: ' + (m.guestId||'not linked') + '</p>');
+    const editingThis = editingUserId === m.id;
+    if(m.role==='shadow'){
+      const linkedGuest = guests.find(g => g.id === m.guestId);
+      if(editingThis){
+        return card(
+          '<label class="field-label">Name</label><input id="euName" type="text" value="' + m.name + '">' +
+          '<label class="field-label">Phone</label><input id="euPhone" type="tel" value="' + m.phone + '">' +
+          '<label class="field-label">Assigned guest</label><select id="euGuest"><option value="">Not assigned</option>' + guests.map(g => '<option value="' + g.id + '"' + (g.id===m.guestId?' selected':'') + '>' + g.name + '</option>').join('') + '</select>' +
+          '<div class="grid2"><button class="big" id="saveUserBtn" data-id="' + m.id + '" data-role="shadow">Save</button><button class="secondary" id="cancelUserBtn">Cancel</button></div>'
+        );
+      }
+      return card('<p style="font-weight:800;">' + m.name + ' <span class="role-tag view">Shadow</span></p><p class="tiny-muted">' + m.phone + '</p><p class="muted" style="margin-top:6px;">Assigned to: ' + (linkedGuest ? linkedGuest.name : 'Not assigned yet') + '</p><button class="secondary" style="margin-top:10px;" data-edituser="' + m.id + '">Edit</button>');
+    }
+    if(editingThis){
+      return card(
+        '<label class="field-label">Name</label><input id="euName" type="text" value="' + m.name + '">' +
+        '<label class="field-label">Phone</label><input id="euPhone" type="tel" value="' + m.phone + '">' +
+        '<div class="grid2"><button class="big" id="saveUserBtn" data-id="' + m.id + '" data-role="member">Save</button><button class="secondary" id="cancelUserBtn">Cancel</button></div>'
+      );
+    }
     return card(
-      '<p style="font-weight:800;">' + m.name + badge(m.m2m,'M2M') + badge(m.logistics,'Logistics') + '</p>' +
+      '<p style="font-weight:800;">' + m.name + badge(m.m2m,'M2M') + badge(m.logistics,'Logistics') + '</p><p class="tiny-muted">' + m.phone + '</p>' +
       '<div style="margin-top:10px; display:flex; justify-content:space-between; align-items:center;"><span style="font-size:13px; font-weight:700;">M2M access</span>' + segControl(m.id,'m2m',m.m2m) + '</div>' +
-      '<div style="margin-top:8px; display:flex; justify-content:space-between; align-items:center;"><span style="font-size:13px; font-weight:700;">Logistics access</span>' + segControl(m.id,'logistics',m.logistics) + '</div>'
+      '<div style="margin-top:8px; display:flex; justify-content:space-between; align-items:center;"><span style="font-size:13px; font-weight:700;">Logistics access</span>' + segControl(m.id,'logistics',m.logistics) + '</div>' +
+      '<button class="secondary" style="margin-top:12px;" data-edituser="' + m.id + '">Edit name / phone</button>'
     );
   }).join('');
+
   html += '<p class="section-label">Admins</p>';
-  html += users.filter(u=>u.role==='admin').map(a => card('<p style="font-weight:800;">' + a.name + '</p>')).join('');
+  html += users.filter(u=>u.role==='admin').map(a => {
+    if(editingUserId === a.id){
+      return card(
+        '<label class="field-label">Name</label><input id="euName" type="text" value="' + a.name + '">' +
+        '<label class="field-label">Phone</label><input id="euPhone" type="tel" value="' + a.phone + '">' +
+        '<div class="grid2"><button class="big" id="saveUserBtn" data-id="' + a.id + '" data-role="admin">Save</button><button class="secondary" id="cancelUserBtn">Cancel</button></div>'
+      );
+    }
+    return card('<p style="font-weight:800;">' + a.name + '</p><p class="tiny-muted">' + a.phone + '</p><button class="secondary" style="margin-top:10px;" data-edituser="' + a.id + '">Edit name / phone</button>');
+  }).join('');
   return html;
 }
 
@@ -415,6 +508,24 @@ function wireEvents(){
     } catch(e){ alert(e.message); }
   };
 
+  document.querySelectorAll('[data-editguest]').forEach(b => b.onclick = () => { editingGuestId = b.dataset.editguest; editingGuestName = null; renderApp(); });
+  const cancelEditGuest = document.getElementById('cancelEditGuestBtn');
+  if(cancelEditGuest) cancelEditGuest.onclick = () => { editingGuestId = null; renderApp(); };
+  const saveEditGuest = document.getElementById('saveEditGuestBtn');
+  if(saveEditGuest) saveEditGuest.onclick = async () => {
+    try {
+      await api('/api/guests/'+saveEditGuest.dataset.id, { method:'PUT', body: JSON.stringify({
+        role: document.getElementById('pfRole').value,
+        arrivalDay: document.getElementById('pfArrDay').value, arrivalTime: document.getElementById('pfArrTime').value, arrivalDetail: document.getElementById('pfArrDetail').value,
+        departDay: document.getElementById('pfDepDay').value, departTime: document.getElementById('pfDepTime').value, departDetail: document.getElementById('pfDepDetail').value,
+        hotel: document.getElementById('pfHotel').value, cabDriver: document.getElementById('pfCabDriver').value, cabPhone: document.getElementById('pfCabPhone').value,
+        shadowName: document.getElementById('pfShadowName').value, shadowPhone: document.getElementById('pfShadowPhone').value
+      })});
+      editingGuestId = null;
+      renderApp();
+    } catch(e){ alert(e.message); }
+  };
+
   const postBtn = document.getElementById('postStatus');
   if(postBtn) postBtn.onclick = async () => { await api('/api/status', { method:'POST', body: JSON.stringify({ status: document.getElementById('statusSelect').value })}); };
 
@@ -424,10 +535,28 @@ function wireEvents(){
   if(addMemberBtn) addMemberBtn.onclick = async () => {
     try {
       const role = document.getElementById('newRoleSelect').value;
+      const guestSelect = document.getElementById('newGuestSelect');
       await api('/api/users', { method:'POST', body: JSON.stringify({
         name: document.getElementById('newNameInput').value, phone: document.getElementById('newPhoneInput').value,
-        role, m2m:'none', logistics:'none', guestId: role==='shadow' ? document.getElementById('newGuestName').value : undefined
+        role, m2m:'none', logistics:'none', guestId: role==='shadow' ? (guestSelect ? guestSelect.value : null) : undefined
       })});
+      users = await api('/api/users');
+      renderApp();
+    } catch(e){ alert(e.message); }
+  };
+  document.querySelectorAll('[data-edituser]').forEach(b => b.onclick = () => { editingUserId = b.dataset.edituser; renderApp(); });
+  const cancelUserBtn = document.getElementById('cancelUserBtn');
+  if(cancelUserBtn) cancelUserBtn.onclick = () => { editingUserId = null; renderApp(); };
+  const saveUserBtn = document.getElementById('saveUserBtn');
+  if(saveUserBtn) saveUserBtn.onclick = async () => {
+    try {
+      const payload = { name: document.getElementById('euName').value, phone: document.getElementById('euPhone').value };
+      if(saveUserBtn.dataset.role === 'shadow'){
+        const gSel = document.getElementById('euGuest');
+        payload.guestId = gSel.value || null;
+      }
+      await api('/api/users/'+saveUserBtn.dataset.id, { method:'PUT', body: JSON.stringify(payload) });
+      editingUserId = null;
       users = await api('/api/users');
       renderApp();
     } catch(e){ alert(e.message); }

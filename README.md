@@ -1,52 +1,41 @@
 # EIRC 51st Regional Conference App
 
-A real working app — phone+OTP login, role-based permissions enforced on the
-server (Admin / M2M / Logistics / Shadow), and instant live sync across every
-device via Socket.io. Nobody passes files around; every edit updates everyone
-else's screen automatically.
+Real working app — phone+OTP login, role-based permissions enforced on the
+server, instant live sync via Socket.io, and the M2M schedule built entirely
+in EIRC's own official Program Builder (unmodified), automatically feeding
+the Logistics module.
 
-## Run it locally (to test on your own laptop first)
+## Run it locally
 ```
 npm install
 npm start
 ```
-Then open http://localhost:4000 in a browser.
+Open http://localhost:4000
 
-## Deploy it for free — Replit (fastest, about 2 minutes, gives you a live link today)
-1. Go to replit.com and sign up free (no card needed).
-2. Click "Create Repl" -> "Import from a ZIP" and upload this whole folder as a zip.
-3. Click the green "Run" button at the top.
-4. Replit shows you a public https:// web address in the preview pane — that's
-   your live link. Copy it and send it to anyone, including the chairman.
+## Deploy (Render, free tier)
+1. Push this folder to a GitHub repo.
+2. Render.com -> New + -> Web Service -> connect the repo.
+3. Build command: npm install   Start command: npm start
 
-## Deploy it for free — Render (more permanent, needs a GitHub account)
-1. Push this folder to a new GitHub repository.
-2. On render.com, click "New +" -> "Web Service" and connect that repo.
-3. Build command: npm install
-4. Start command: npm start
-5. Deploy. You get a permanent link like https://your-app-name.onrender.com
+## How the M2M integration works
+- `public/m2m-builder.html` is EIRC's official Program Builder, copied in
+  completely unmodified — not a single line changed.
+- Whoever has M2M edit rights sees this builder directly (embedded) when they
+  open the M2M tab. Everyone else sees a clean read-only schedule.
+- Every few seconds while the builder is open, the app reads its live data
+  (same-origin, no changes to the builder's own code) and syncs it to the
+  backend, which automatically works out who still needs logistics finalized.
+- Per Mayur's instruction: Dais members, Judges, and Speakers count as guests
+  needing logistics. Master of Ceremonies and Vote of Thanks proposers do not.
+- If someone is removed from the M2M entirely, their finalized logistics and
+  any shadow assignment to them are automatically cleaned up.
 
-## Test logins (demo data — the OTP is always 1234 in this version)
-| Person | Phone | What they can do |
-|---|---|---|
-| CA Mayur Agarwal | 9830100001 | Admin — everything |
-| Pratik (M2M head) | 9007388214 | Edit M2M only |
-| Kaushik | 9830122223 | Edit Logistics only, view M2M |
-| Partha | 9830111112 | View M2M and Logistics only, no editing |
-| CA Pratik Jhunjhunwala | 9007388215 | Shadow — sees only Tehseen Poonawalla |
+## Test logins (OTP is always 1234 in this version)
+- CA Mayur Agarwal — 9903349773 — Admin
+- CA Aditya Maheshwari — 9733044550 — Admin
 
-## Before this goes live for the real conference
-1. **Real OTP** — swap the fixed "1234" code in `server.js` (`/api/auth/request-otp`)
-   for a real SMS provider call, e.g. MSG91 or Twilio (needs a paid account,
-   roughly ₹0.15–0.30 per SMS in India).
-2. **A real database** — right now data is stored in a simple `db.json` file
-   on the server, which works fine for a two-day event but should move to
-   MySQL/Postgres for anything longer-running or higher-traffic.
-3. **Add your real people and sessions** — nothing in this app is hardcoded
-   permanently. Log in as Admin, go to Manage Access, and add Mayur's actual
-   team by name and phone number; log in as the M2M head and enter the real
-   schedule.
-4. **Porting to Laravel** (if your team goes that route per your sir's advice) —
-   this Node/Express code is a direct, working spec: the same routes,
-   permission checks, and OTP flow translate cleanly into Laravel controllers,
-   middleware, and Laravel Reverb for the real-time piece.
+## Before the real event
+1. Real SMS OTP provider (MSG91/Twilio) instead of the fixed demo code.
+2. A real database (MySQL/Postgres) instead of the simple db.json file —
+   Render's free tier wipes local files on every redeploy.
+3. Add your real team and the real programme through the app itself.

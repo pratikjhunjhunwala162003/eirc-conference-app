@@ -162,8 +162,17 @@ document.getElementById('logoutBtn').onclick = () => {
 
 function connectSocket(){
   socket = io();
-  socket.on('sessions:updated', s => { sessions = s; renderApp(); });
-  socket.on('guests:updated', g => { guests = g; loadPending().then(renderApp); });
+  socket.on('sessions:updated', s => {
+    sessions = s;
+    // Never re-render while the official builder iframe is the thing on screen — a re-render
+    // would reload it from scratch and wipe out whatever is being typed into it right now.
+    if(screen === 'm2m' && canEditM2M()) return;
+    renderApp();
+  });
+  socket.on('guests:updated', g => {
+    guests = g;
+    loadPending().then(() => { if(!(screen === 'm2m' && canEditM2M())) renderApp(); });
+  });
   socket.on('status:updated', s => { statusLog = s; renderApp(); });
   socket.on('users:updated', u => {
     users = u;
@@ -172,9 +181,9 @@ function connectSocket(){
       me = myUpdated;
       localStorage.setItem('eirc_user', JSON.stringify(me));
     }
-    renderApp();
+    if(!(screen === 'm2m' && canEditM2M())) renderApp();
   });
-  socket.on('daydates:updated', d => { dayDates = d; renderApp(); });
+  socket.on('daydates:updated', d => { dayDates = d; if(!(screen === 'm2m' && canEditM2M())) renderApp(); });
 }
 
 async function loadEverything(){
@@ -273,7 +282,7 @@ function renderHome(){
     html += guests.map(g => card('<div class="row"><div class="avatar">' + initials(g.name) + '</div><div style="flex:1;"><p class="name-lg">' + g.name + '</p><p class="tiny-muted">' + (g.role||'') + '</p></div></div>')).join('');
     if(canViewLogistics() && pendingLogistics.length){
       html += '<p class="section-label">Pending logistics (from M2M)</p>';
-      html += pendingLogistics.map(p => card('<div class="row"><div class="avatar">' + initials(p.name) + '</div><div style="flex:1;"><p class="name-lg">' + p.name + '</p><p class="muted">' + p.session + '</p></div><span class="pending-tag">Pending</span></div>')).join('');
+      html += pendingLogistics.map(p => card('<div class="row"><div class="avatar">' + initials(p.name) + '</div><div style="flex:1;"><p class="name-lg">' + p.name + (p.role ? ' <span class="tiny-muted">(' + p.role + ')</span>' : '') + '</p><p class="muted">' + p.session + '</p></div><span class="pending-tag">Pending</span></div>')).join('');
     }
     return html;
   }
@@ -289,31 +298,31 @@ function renderHome(){
 
 function renderM2M(){
   const editable = canEditM2M();
-  let html = '<h2 class="page-title">M2M schedule</h2><p class="page-sub">' + (editable ? 'You can edit this — changes go live for everyone instantly.' : 'View only.') + '</p>';
-  if(editable) html += '<button class="big" id="addSessionBtn" style="margin-bottom:16px;">+ Add a session</button>';
-  const days = ['Day 1','Day 2'];
+  if(editable){
+    return '<h2 class="page-title">M2M schedule</h2>' +
+      '<p class="page-sub"><span id="syncDot" class="live-dot"></span><span id="syncStatus">This is EIRC\'s official program builder. Whatever you build here syncs to Logistics automatically.</span></p>' +
+      '<div style="border:1px solid var(--border); border-radius:12px; overflow:hidden; height:78vh;">' +
+      '<iframe id="m2mFrame" src="/m2m-builder.html" style="width:100%; height:100%; border:none;"></iframe>' +
+      '</div>';
+  }
+  let html = '<h2 class="page-title">M2M schedule</h2><p class="page-sub">View only — set by the M2M coordinator.</p>';
+  const days = [...new Set(sessions.map(s=>s.day))].filter(Boolean);
+  if(!sessions.length) html += '<p class="empty">No sessions published yet.</p>';
   days.forEach(d => {
-    html += '<p class="section-label">' + dayLabelWithDate(d) + '</p>';
-    const daySessions = sessions.filter(s=>s.day===d);
-    if(!daySessions.length) html += '<p class="empty">No sessions yet for ' + d + '.</p>';
-    daySessions.forEach(s => {
-      if(editingSession===s.id){
-        html += card(
-          '<label class="field-label">Day</label><select id="edDay"><option value="Day 1"' + (s.day==='Day 1'?' selected':'') + '>Day 1</option><option value="Day 2"' + (s.day==='Day 2'?' selected':'') + '>Day 2</option></select>' +
-          '<div class="grid2"><div><label class="field-label">Start time</label><input id="edTime" type="time" value="' + s.time + '"></div><div><label class="field-label">End time</label><input id="edEnd" type="time" value="' + s.end + '"></div></div>' +
-          '<label class="field-label">Session topic</label><input id="edTopic" type="text" value="' + s.topic + '">' +
-          '<label class="field-label">Session chairman</label><input id="edChairman" type="text" value="' + s.chairman + '">' +
-          '<label class="field-label">Speaker name(s) — comma separated</label><input id="edSpeakers" type="text" value="' + s.speakers + '">' +
-          '<label class="field-label">VoT (Vote of Thanks) — comma separated</label><input id="edVot" type="text" value="' + (s.vot||'') + '">' +
-          '<label class="field-label">Hall</label><input id="edHall" type="text" value="' + s.hall + '">' +
-          '<div class="grid2"><button class="big" id="saveSessionBtn" data-id="' + s.id + '">Save</button><button class="secondary" id="cancelSessionBtn">Cancel</button></div>'
-        );
-      } else {
-        html += card(
-          '<div class="row" style="align-items:flex-start;"><span class="accent" style="width:56px; flex-shrink:0; padding-top:2px;">' + s.time + '</span><div style="flex:1; min-width:0;"><p style="font-weight:800;">' + s.topic + '</p><p class="muted">Chairman: ' + s.chairman + '</p><p class="muted">Speakers: ' + s.speakers + '</p>' + (s.vot ? '<p class="muted">VoT: ' + s.vot + '</p>' : '') + '<p class="tiny-muted">' + s.hall + ' - ends ' + s.end + '</p></div></div>' +
-          (editable ? '<div style="display:flex; gap:8px; margin-top:10px;"><button class="secondary" data-edit="' + s.id + '">Edit</button><button class="danger-outline" data-del="' + s.id + '">Delete</button></div>' : '')
-        );
-      }
+    html += '<p class="section-label">' + d + '</p>';
+    sessions.filter(s=>s.day===d).forEach(s => {
+      let peopleLines = '';
+      s.dais.forEach(p => peopleLines += '<p class="muted">' + p.role + ': ' + p.name + '</p>');
+      s.judges.forEach(p => peopleLines += '<p class="muted">Judge: ' + p.name + '</p>');
+      s.speakers.forEach(p => peopleLines += '<p class="muted">Speaker: ' + p.name + (p.topic ? ' — ' + p.topic : '') + '</p>');
+      if(s.moc) peopleLines += '<p class="tiny-muted">MoC: ' + s.moc + '</p>';
+      if(s.vot) peopleLines += '<p class="tiny-muted">Vote of thanks: ' + s.vot + '</p>';
+      html += card(
+        '<div class="row" style="align-items:flex-start;"><span class="accent" style="width:56px; flex-shrink:0; padding-top:2px;">' + (s.time||'') + '</span><div style="flex:1; min-width:0;">' +
+        '<p style="font-weight:800;">' + (s.sessionName||'') + (s.topic ? ' — ' + s.topic : '') + '</p>' +
+        peopleLines +
+        '<p class="tiny-muted">' + (s.hall||'') + '</p></div></div>'
+      );
     });
   });
   return html;
@@ -324,7 +333,7 @@ function guestCard(g, editable){
   return card(
     '<div class="row" style="margin-bottom:10px;"><div class="avatar">' + initials(g.name) + '</div><div style="flex:1;"><p class="name-lg">' + g.name + '</p><p class="tiny-muted">' + (g.role||'Not classified yet') + '</p></div></div>' +
     '<p class="tiny-muted" style="font-weight:800;">SESSION <span class="tiny-muted" style="font-weight:400;">(auto from M2M)</span></p>' +
-    '<p style="font-weight:700;">' + (s?s.topic:'') + '</p><p class="muted">' + (s?(s.day+', '+s.time+'-'+s.end+' - '+s.hall):'') + '</p>' +
+    '<p style="font-weight:700;">' + (s ? ((s.sessionName||'') + (s.topic ? ' — ' + s.topic : '')) : '') + '</p><p class="muted">' + (s?(s.day+', '+s.time+' - '+s.hall):'') + '</p>' +
     '<p class="tiny-muted" style="font-weight:800; margin-top:12px;">TRAVEL</p>' +
     '<p class="muted">Arrival: ' + formatDateNice(g.arrivalDate) + ' ' + (g.arrivalTime||'') + ' - ' + (g.arrivalDetail||'') + '</p>' +
     '<p class="muted">Departure: ' + formatDateNice(g.departDate) + ' ' + (g.departTime||'') + ' - ' + (g.departDetail||'') + '</p>' +
@@ -359,7 +368,7 @@ function pendingForm(p){
   return card(
     '<p style="font-weight:800; margin-bottom:8px;">Finalize logistics for ' + p.name + '</p>' +
     '<p class="tiny-muted" style="margin-bottom:10px;">' + p.session + '</p>' +
-    '<label class="field-label">Role or category</label><input id="pfRole" type="text" placeholder="e.g. Speaker, Chief guest, Panelist">' +
+    '<label class="field-label">Role or category</label><input id="pfRole" type="text" placeholder="e.g. Speaker, Chief guest, Panelist" value="' + (p.role||'') + '">' +
     '<div class="grid2"><div><label class="field-label">Arrival date</label><input id="pfArrDate" type="date"></div><div><label class="field-label">Arrival time</label><input id="pfArrTime" type="time"></div></div>' +
     '<label class="field-label">Arrival detail</label><input id="pfArrDetail" type="text" placeholder="Flight AI 771, Kolkata airport">' +
     '<div class="grid2"><div><label class="field-label">Departure date</label><input id="pfDepDate" type="date"></div><div><label class="field-label">Departure time</label><input id="pfDepTime" type="time"></div></div>' +
@@ -380,7 +389,7 @@ function renderLogistics(){
     html += '<p class="section-label">Pending — from M2M, not yet finalized</p>';
     html += pendingLogistics.map(p => {
       if(editable && editingGuestName===p.name) return pendingForm(p);
-      return card('<div class="row"><div class="avatar">' + initials(p.name) + '</div><div style="flex:1;"><p class="name-lg">' + p.name + '</p><p class="muted">' + p.session + '</p></div><span class="pending-tag">Pending</span></div>' + (editable ? '<button class="secondary" style="margin-top:10px;" data-startpending="' + p.name + '">Finalize logistics</button>' : ''));
+      return card('<div class="row"><div class="avatar">' + initials(p.name) + '</div><div style="flex:1;"><p class="name-lg">' + p.name + (p.role ? ' <span class="tiny-muted">(' + p.role + ')</span>' : '') + '</p><p class="muted">' + p.session + '</p></div><span class="pending-tag">Pending</span></div>' + (editable ? '<button class="secondary" style="margin-top:10px;" data-startpending="' + p.name + '">Finalize logistics</button>' : ''));
     }).join('');
   }
   html += '<p class="section-label">Finalized</p>';
@@ -423,14 +432,6 @@ function segControl(personId, key, current){
 
 function renderAccess(){
   let html = '<h2 class="page-title">Manage access</h2><p class="page-sub">Add anyone by name and phone number, then set exactly what they can see and edit.</p>';
-
-  html += '<p class="section-label">Conference dates</p>';
-  html += card(
-    '<p class="tiny-muted" style="margin-bottom:10px;">This sets what "Day 1" and "Day 2" mean on the M2M schedule. Guest arrivals and departures use their own real dates directly, so a guest can still arrive early or leave late without being tied to these two days.</p>' +
-    '<label class="field-label">Day 1 date</label><input id="day1Input" type="date" value="' + (dayDates['Day 1']||'') + '">' +
-    '<label class="field-label">Day 2 date</label><input id="day2Input" type="date" value="' + (dayDates['Day 2']||'') + '">' +
-    '<button class="big" id="saveDayDatesBtn">Save conference dates</button>'
-  );
 
   html += '<div class="add-inline">' +
     '<label class="field-label">Full name</label><input id="newNameInput" type="text" placeholder="e.g. Riya Sen">' +
@@ -510,28 +511,33 @@ function renderApp(){
   wireEvents();
 }
 
+let m2mSyncTimer = null;
+let lastM2MSyncSnapshot = '';
+function setupM2MSyncBridge(){
+  const frame = document.getElementById('m2mFrame');
+  if(!frame){ if(m2mSyncTimer){ clearInterval(m2mSyncTimer); m2mSyncTimer = null; } return; }
+  if(m2mSyncTimer) return; // already running for this frame
+  const dot = document.getElementById('syncDot');
+  const status = document.getElementById('syncStatus');
+  m2mSyncTimer = setInterval(async () => {
+    try {
+      const win = frame.contentWindow;
+      if(!win || !win.S) return; // builder not loaded yet
+      const payload = {
+        days: win.S.days || [], halls: win.S.halls || [], sessions: win.S.sessions || [],
+        eventName: win.S.eventName || '', venue: win.S.venue || ''
+      };
+      const snapshot = JSON.stringify(payload);
+      if(snapshot === lastM2MSyncSnapshot) return; // nothing changed, skip the request
+      lastM2MSyncSnapshot = snapshot;
+      await api('/api/m2m-sync', { method:'POST', body: snapshot });
+      if(status) status.textContent = 'Synced to Logistics just now.';
+    } catch(e){ /* builder still loading, or cross-origin during initial paint — safe to ignore and retry */ }
+  }, 3000);
+}
+
 function wireEvents(){
-  document.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => { editingSession = b.dataset.edit; renderApp(); });
-  const cancelBtn = document.getElementById('cancelSessionBtn');
-  if(cancelBtn) cancelBtn.onclick = () => { editingSession = null; renderApp(); };
-  const saveBtn = document.getElementById('saveSessionBtn');
-  if(saveBtn) saveBtn.onclick = async () => {
-    const id = saveBtn.dataset.id;
-    await api('/api/sessions/'+id, { method:'PUT', body: JSON.stringify({
-      day: document.getElementById('edDay').value,
-      time: document.getElementById('edTime').value, end: document.getElementById('edEnd').value,
-      topic: document.getElementById('edTopic').value, chairman: document.getElementById('edChairman').value,
-      speakers: document.getElementById('edSpeakers').value, vot: document.getElementById('edVot').value, hall: document.getElementById('edHall').value
-    })});
-    editingSession = null;
-  };
-  document.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => { await api('/api/sessions/'+b.dataset.del, { method:'DELETE' }); });
-  const addSessionBtn = document.getElementById('addSessionBtn');
-  if(addSessionBtn) addSessionBtn.onclick = async () => {
-    const s = await api('/api/sessions', { method:'POST', body: JSON.stringify({ day:'Day 1', time:'12:00', end:'12:30', topic:'New session - tap edit to fill in', chairman:'', speakers:'', vot:'', hall:'Main auditorium' })});
-    editingSession = s.id;
-    renderApp();
-  };
+  setupM2MSyncBridge();
 
   document.querySelectorAll('[data-startpending]').forEach(b => b.onclick = () => { editingGuestName = b.dataset.startpending; renderApp(); });
   const cancelPending = document.getElementById('cancelPendingBtn');
@@ -602,17 +608,6 @@ function wireEvents(){
       renderApp();
     } catch(e){ alert(e.message); }
   });
-  const saveDayDatesBtn = document.getElementById('saveDayDatesBtn');
-  if(saveDayDatesBtn) saveDayDatesBtn.onclick = async () => {
-    try {
-      dayDates = await api('/api/day-dates', { method:'PUT', body: JSON.stringify({
-        'Day 1': document.getElementById('day1Input').value,
-        'Day 2': document.getElementById('day2Input').value
-      })});
-      renderApp();
-      alert('Conference dates saved.');
-    } catch(e){ alert(e.message); }
-  };
   const cancelUserBtn = document.getElementById('cancelUserBtn');
   if(cancelUserBtn) cancelUserBtn.onclick = () => { editingUserId = null; renderApp(); };
   const saveUserBtn = document.getElementById('saveUserBtn');

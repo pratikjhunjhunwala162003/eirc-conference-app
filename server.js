@@ -29,6 +29,8 @@ function loadDB(){
       { id: 'u2', name: 'CA Aditya Maheshwari', phone: '9733044550', role: 'admin' },
     ],
     sessions: [],
+    // Raw state synced from EIRC's official M2M Program Builder — this app never writes to it directly.
+    m2mBuilder: { days: [], halls: [], sessions: [], eventName: '', venue: '' },
     guests: [],
     statusLog: [],
     otps: {}, // phone -> { code, expires }
@@ -40,23 +42,63 @@ function loadDB(){
 }
 function saveDB(db){ fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2)); }
 let db = loadDB();
+if(!db.m2mBuilder) db.m2mBuilder = { days: [], halls: [], sessions: [], eventName: '', venue: '' }; // migration safety for existing deployments
 
-// The M2M schedule is the single source of truth for who counts as a guest/speaker.
-// Logistics can only be finalized for a name that actually appears in the M2M — never invented independently.
-function speakerNamesFromM2M(){
-  const names = new Set();
-  db.sessions.forEach(s => {
-    (s.speakers || '').split(',').map(x => x.trim()).filter(Boolean).forEach(n => names.add(n));
+// The M2M schedule now comes from EIRC's own official Program Builder (public/m2m-builder.html),
+// synced in via /api/m2m-sync. We never generate or edit session data ourselves — we only read
+// it and derive the guest list from it. Per Mayur: Dais members, Judges and Speakers count as
+// people needing logistics. MoC and Vote of Thanks proposers do not (usually local, no travel/hotel).
+function guestCandidatesFromM2M(){
+  const list = []; // { name, role, session, topic? }
+  (db.m2mBuilder.sessions || []).forEach(s => {
+    (s.daisMembers || []).forEach(p => { if(p.name && p.name.trim()) list.push({ name: p.name.trim(), role: p.role || 'Dais', session: s }); });
+    (s.judges || []).forEach(p => { if(p.name && p.name.trim()) list.push({ name: p.name.trim(), role: 'Judge', session: s }); });
+    (s.speakers || []).forEach(p => { if(p.name && p.name.trim()) list.push({ name: p.name.trim(), role: 'Speaker', session: s, topic: p.topic }); });
   });
-  return [...names];
+  return list;
+}
+function speakerNamesFromM2M(){
+  const seen = new Set();
+  guestCandidatesFromM2M().forEach(c => seen.add(c.name));
+  return [...seen];
 }
 function sessionForSpeaker(name){
-  return db.sessions.find(s => (s.speakers || '').split(',').map(x => x.trim()).includes(name));
+  const found = guestCandidatesFromM2M().find(c => c.name === name);
+  return found ? found.session : null;
+}
+function roleForSpeaker(name){
+  const found = guestCandidatesFromM2M().find(c => c.name === name);
+  return found ? found.role : '';
+}
+function dayNameOf(dayId){
+  const d = (db.m2mBuilder.days || []).find(x => x.id === dayId);
+  return d ? d.name : '';
+}
+function hallNameOf(hallId){
+  const h = (db.m2mBuilder.halls || []).find(x => x.id === hallId);
+  return h ? h.name : (db.m2mBuilder.mainHallName || 'Main hall');
+}
+// A simplified read-only schedule view for anyone without edit rights on the builder itself
+// (view-only M2M members, and every non-M2M screen that just needs to display the schedule).
+function derivedSessionsView(){
+  return (db.m2mBuilder.sessions || []).map(s => ({
+    id: s.id,
+    day: dayNameOf(s.dayId),
+    time: s.startTime,
+    sessionName: s.sessionName,
+    topic: s.topic,
+    hall: hallNameOf(s.hallId),
+    dais: (s.daisMembers || []).filter(p => p.name).map(p => ({ name: p.name, role: p.role })),
+    judges: (s.judges || []).filter(p => p.name).map(p => ({ name: p.name })),
+    speakers: (s.speakers || []).filter(p => p.name).map(p => ({ name: p.name, topic: p.topic })),
+    moc: s.mocNames || '',
+    vot: s.voteOfThanksBy || ''
+  }));
 }
 
-// If a guest's name no longer appears in ANY session's speaker list — because a session was
-// deleted, or their name was edited out of one — their finalized logistics shouldn't exist
-// either, and no shadow should still be pointed at them.
+// If a guest's name no longer appears anywhere in the synced M2M — because a session was
+// deleted, or their name was removed from it in the builder — their finalized logistics
+// shouldn't exist either, and no shadow should still be pointed at them.
 function pruneOrphanedGuests(){
   const validNames = speakerNamesFromM2M();
   const removed = db.guests.filter(g => !validNames.includes(g.name));
@@ -75,6 +117,7 @@ function pruneOrphanedGuests(){
   io.emit('guests:updated', db.guests);
   if(usersChanged) io.emit('users:updated', db.users.map(publicUser));
 }
+
 
 // ---------- Auth middleware ----------
 
@@ -135,33 +178,27 @@ function publicUser(u){
 }
 
 // ---------- M2M ----------
+// The M2M schedule is authored exclusively in EIRC's official Program Builder
+// (served at /m2m-builder.html, completely unmodified from the file EIRC provided).
+// This app never creates or edits sessions itself — it only receives a live sync of
+// whatever the builder currently holds, and derives the guest list and a read-only
+// display from it.
 
-app.get('/api/sessions', auth, (req, res) => res.json(db.sessions));
+app.get('/api/sessions', auth, (req, res) => res.json(derivedSessionsView()));
 
-app.post('/api/sessions', auth, requireM2MEdit, (req, res) => {
-  const s = { id: 'sn' + Date.now(), ...req.body };
-  db.sessions.push(s);
+// Only whoever holds M2M edit rights can push a sync (they're the one with the builder open).
+app.post('/api/m2m-sync', auth, requireM2MEdit, (req, res) => {
+  db.m2mBuilder = {
+    days: req.body.days || [],
+    halls: req.body.halls || [],
+    sessions: req.body.sessions || [],
+    eventName: req.body.eventName || '',
+    venue: req.body.venue || ''
+  };
   saveDB(db);
-  io.emit('sessions:updated', db.sessions);
-  res.json(s);
-});
-
-app.put('/api/sessions/:id', auth, requireM2MEdit, (req, res) => {
-  const s = db.sessions.find(x => x.id === req.params.id);
-  if(!s) return res.status(404).json({ error: 'Not found' });
-  Object.assign(s, req.body);
-  saveDB(db);
-  io.emit('sessions:updated', db.sessions);
+  io.emit('sessions:updated', derivedSessionsView());
   pruneOrphanedGuests();
-  res.json(s);
-});
-
-app.delete('/api/sessions/:id', auth, requireM2MEdit, (req, res) => {
-  db.sessions = db.sessions.filter(x => x.id !== req.params.id);
-  saveDB(db);
-  io.emit('sessions:updated', db.sessions);
-  pruneOrphanedGuests();
-  res.json({ ok: true });
+  res.json({ ok: true, sessionCount: db.m2mBuilder.sessions.length });
 });
 
 // ---------- Logistics ----------
@@ -172,13 +209,19 @@ app.get('/api/guests', auth, (req, res) => {
 });
 
 // The logistics head's dashboard: who still needs their itinerary finalized (pulled straight
-// from the M2M), and who is already done. Nothing here is typed in manually — it's derived.
+// from the M2M), and who is already done. Nothing here is typed in manually — it's derived,
+// including their role, which comes from what the M2M coordinator assigned in the builder.
 app.get('/api/logistics/dashboard', auth, (req, res) => {
   const allNames = speakerNamesFromM2M();
   const doneNames = db.guests.map(g => g.name);
   const pending = allNames.filter(n => !doneNames.includes(n)).map(n => {
     const s = sessionForSpeaker(n);
-    return { name: n, session: s ? (s.topic + ' - ' + s.day + ', ' + s.time) : 'Not yet in a session' };
+    const role = roleForSpeaker(n);
+    return {
+      name: n,
+      role,
+      session: s ? ((s.sessionName || s.topic || 'Session') + ' - ' + dayNameOf(s.dayId) + ', ' + s.startTime) : 'Not yet in a session'
+    };
   });
   res.json({ pending, completed: db.guests });
 });
@@ -186,13 +229,13 @@ app.get('/api/logistics/dashboard', auth, (req, res) => {
 // Finalize logistics for a pending name. The name MUST already exist in the M2M — this
 // endpoint refuses to create a guest out of thin air, by design.
 app.post('/api/guests', auth, requireLogisticsEdit, (req, res) => {
-  const { name, role, arrivalDay, arrivalTime, arrivalDetail, departDay, departTime, departDetail, hotel, cabDriver, cabPhone, shadowName, shadowPhone } = req.body;
+  const { name, role, arrivalDate, arrivalTime, arrivalDetail, departDate, departTime, departDetail, hotel, cabDriver, cabPhone, shadowName, shadowPhone } = req.body;
   if(!name) return res.status(400).json({ error: 'Name is required' });
   const validNames = speakerNamesFromM2M();
   if(!validNames.includes(name)) return res.status(400).json({ error: 'This name is not on the M2M schedule. Ask the M2M coordinator to add the session first — logistics cannot add a name that is not speaking.' });
   if(db.guests.find(g => g.name === name)) return res.status(409).json({ error: 'Logistics for this person is already finalized.' });
   const s = sessionForSpeaker(name);
-  const g = { id: 'g' + Date.now(), name, role: role || '', sessionId: s ? s.id : null, arrivalDay, arrivalTime, arrivalDetail, departDay, departTime, departDetail, hotel, cabDriver, cabPhone, shadowName, shadowPhone };
+  const g = { id: 'g' + Date.now(), name, role: role || roleForSpeaker(name) || '', sessionId: s ? s.id : null, arrivalDate, arrivalTime, arrivalDetail, departDate, departTime, departDetail, hotel, cabDriver, cabPhone, shadowName, shadowPhone };
   db.guests.push(g);
   saveDB(db);
   io.emit('guests:updated', db.guests);

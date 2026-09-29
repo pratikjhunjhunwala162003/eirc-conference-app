@@ -275,6 +275,10 @@ app.post('/api/status', auth, (req, res) => {
 
 // ---------- Admin: manage users ----------
 
+// Anyone logged in can fetch their OWN current record — this is what lets the app refresh
+// permissions on every load, instead of trusting whatever was cached at last login.
+app.get('/api/me', auth, (req, res) => res.json(publicUser(req.user)));
+
 app.get('/api/users', auth, requireAdmin, (req, res) => res.json(db.users.map(publicUser)));
 
 app.post('/api/users', auth, requireAdmin, (req, res) => {

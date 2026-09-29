@@ -181,6 +181,11 @@ function connectSocket(){
 }
 
 async function loadEverything(){
+  try {
+    const fresh = await api('/api/me');
+    me = fresh;
+    localStorage.setItem('eirc_user', JSON.stringify(me));
+  } catch(e){ /* if this fails, fall back to whatever was cached */ }
   sessions = await api('/api/sessions');
   guests = await api('/api/guests');
   statusLog = await api('/api/status');

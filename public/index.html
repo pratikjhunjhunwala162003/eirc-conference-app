@@ -299,11 +299,16 @@ function renderHome(){
 function renderM2M(){
   const editable = canEditM2M();
   if(editable){
-    return '<h2 class="page-title">M2M schedule</h2>' +
+    // The official builder needs real desktop width for its side-by-side panels — break
+    // it out of our narrow centered column entirely rather than squeezing it in.
+    return '<div style="width:100vw; position:relative; left:50%; margin-left:-50vw;">' +
+      '<div style="max-width:640px; margin:0 auto; padding:0 16px;">' +
+      '<h2 class="page-title">M2M schedule</h2>' +
       '<p class="page-sub"><span id="syncDot" class="live-dot"></span><span id="syncStatus">This is EIRC\'s official program builder. Whatever you build here syncs to Logistics automatically.</span></p>' +
-      '<div style="border:1px solid var(--border); border-radius:12px; overflow:hidden; height:78vh;">' +
-      '<iframe id="m2mFrame" src="/m2m-builder.html" style="width:100%; height:100%; border:none;"></iframe>' +
-      '</div>';
+      '</div>' +
+      '<div style="width:100%; height:calc(100vh - 190px);">' +
+      '<iframe id="m2mFrame" src="/m2m-builder.html" style="width:100%; height:100%; border:none; display:block;"></iframe>' +
+      '</div></div>';
   }
   let html = '<h2 class="page-title">M2M schedule</h2><p class="page-sub">View only — set by the M2M coordinator.</p>';
   const days = [...new Set(sessions.map(s=>s.day))].filter(Boolean);

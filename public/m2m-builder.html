@@ -917,6 +917,7 @@ const S = {
     timeColor:'#1E3A5F', timeBold:true,
   }
 };
+window.S = S; // exposes the same object for the EIRC conference app's Logistics sync — reads only, changes nothing about this tool
 let sessCounter = 0;
 const SESSION_TYPES = ['Inaugural','Knowledge','Skill Up','Technical','Special','Panel Discussion','Networking','Tea Break','Lunch Break','Tea & Snacks','Cultural','Other'];
 const DAIS_ROLES = ['Chairman','Session Chairman','Chief Guest','Guest of Honour','Special Invitee','Vice Chairman','Treasurer','Secretary','Speaker','Moderator','Panelist','Past President','Council Member','MCM','Advisor','Other'];

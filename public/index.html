@@ -517,13 +517,10 @@ function setupM2MSyncBridge(){
   m2mSyncTimer = setInterval(async () => {
     try {
       const win = frame.contentWindow;
-      if(!win) return;
-      let liveS;
-      try { liveS = win.eval('typeof S !== "undefined" ? S : null'); } catch(e){ return; }
-      if(!liveS) return; // builder not loaded yet
+      if(!win || !win.S) return; // builder not loaded yet
       const payload = {
-        days: liveS.days || [], halls: liveS.halls || [], sessions: liveS.sessions || [],
-        eventName: liveS.eventName || '', venue: liveS.venue || ''
+        days: win.S.days || [], halls: win.S.halls || [], sessions: win.S.sessions || [],
+        eventName: win.S.eventName || '', venue: win.S.venue || ''
       };
       const snapshot = JSON.stringify(payload);
       if(snapshot === lastM2MSyncSnapshot) return; // nothing changed, skip the request

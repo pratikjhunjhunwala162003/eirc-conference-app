@@ -51,9 +51,23 @@ if(!db.m2mBuilder) db.m2mBuilder = { days: [], halls: [], sessions: [], eventNam
 function guestCandidatesFromM2M(){
   const list = []; // { name, role, session, topic? }
   (db.m2mBuilder.sessions || []).forEach(s => {
+    // Top-level lists (used by a separate "Dais Setup" style tab, if the coordinator uses it)
     (s.daisMembers || []).forEach(p => { if(p.name && p.name.trim()) list.push({ name: p.name.trim(), role: p.role || 'Dais', session: s }); });
     (s.judges || []).forEach(p => { if(p.name && p.name.trim()) list.push({ name: p.name.trim(), role: 'Judge', session: s }); });
     (s.speakers || []).forEach(p => { if(p.name && p.name.trim()) list.push({ name: p.name.trim(), role: 'Speaker', session: s, topic: p.topic }); });
+    // The actual per-slot programme flow — this is where real names are entered in practice.
+    (s.timeslots || []).forEach(ts => {
+      const rt = ts.rowType || 'normal';
+      if(rt === 'speaker' && ts.speakerName && ts.speakerName.trim()){
+        list.push({ name: ts.speakerName.trim(), role: 'Speaker', session: s, topic: ts.speakerTopic });
+      } else if(rt === 'address_by' && ts.addressByName && ts.addressByName.trim()){
+        list.push({ name: ts.addressByName.trim(), role: ts.addressByDesignation ? 'Address by (' + ts.addressByDesignation + ')' : 'Address by', session: s, topic: ts.addressByTopic });
+      } else if(rt === 'panel'){
+        if(ts.moderatorName && ts.moderatorName.trim()) list.push({ name: ts.moderatorName.trim(), role: 'Moderator', session: s, topic: ts.panelTopic });
+        (ts.panelists || []).forEach(p => { if(p.name && p.name.trim()) list.push({ name: p.name.trim(), role: 'Panelist', session: s, topic: ts.panelTopic }); });
+      }
+      // 'vot' (Vote of Thanks) is deliberately excluded — per Mayur, VoT proposers don't need logistics.
+    });
   });
   return list;
 }
@@ -81,19 +95,23 @@ function hallNameOf(hallId){
 // A simplified read-only schedule view for anyone without edit rights on the builder itself
 // (view-only M2M members, and every non-M2M screen that just needs to display the schedule).
 function derivedSessionsView(){
-  return (db.m2mBuilder.sessions || []).map(s => ({
-    id: s.id,
-    day: dayNameOf(s.dayId),
-    time: s.startTime,
-    sessionName: s.sessionName,
-    topic: s.topic,
-    hall: hallNameOf(s.hallId),
-    dais: (s.daisMembers || []).filter(p => p.name).map(p => ({ name: p.name, role: p.role })),
-    judges: (s.judges || []).filter(p => p.name).map(p => ({ name: p.name })),
-    speakers: (s.speakers || []).filter(p => p.name).map(p => ({ name: p.name, topic: p.topic })),
-    moc: s.mocNames || '',
-    vot: s.voteOfThanksBy || ''
-  }));
+  const allCandidates = guestCandidatesFromM2M();
+  return (db.m2mBuilder.sessions || []).map(s => {
+    const peopleHere = allCandidates.filter(c => c.session === s);
+    return {
+      id: s.id,
+      day: dayNameOf(s.dayId),
+      time: s.startTime,
+      sessionName: s.sessionName,
+      topic: s.topic,
+      hall: hallNameOf(s.hallId),
+      dais: peopleHere.map(p => ({ name: p.name, role: p.role })),
+      judges: [],
+      speakers: [],
+      moc: s.mocNames || '',
+      vot: s.voteOfThanksBy || ''
+    };
+  });
 }
 
 // If a guest's name no longer appears anywhere in the synced M2M — because a session was
